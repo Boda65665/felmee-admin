@@ -35,7 +35,6 @@ import {
 import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
-  ApiError,
 
   useBlockProvider,
   useUnblockProvider,
@@ -241,7 +240,7 @@ const MastersPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось заблокировать",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -258,7 +257,7 @@ const MastersPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось разблокировать",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -302,7 +301,7 @@ const MastersPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось сохранить",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -315,7 +314,7 @@ const MastersPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось сохранить",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -326,8 +325,7 @@ const MastersPage = () => {
     if (!profileTarget || !profileQuery.isError) return;
     toast.error(
       "Не удалось загрузить профиль",
-      profileQuery.error instanceof ApiError
-        ? profileQuery.error.message
+      profileQuery.error instanceof Error ? profileQuery.error
         : "Попробуйте ещё раз.",
     );
     setProfileTarget(null);
@@ -583,9 +581,7 @@ const MastersPage = () => {
             </p>
           ) : isError && !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-base text-danger">
-                Не удалось загрузить мастеров и салоны.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
               <button
                 type="button"
                 onClick={() => refetch()}

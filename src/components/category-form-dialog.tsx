@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
 import {
@@ -129,12 +130,12 @@ export function CategoryFormDialog({
   });
   const [subs, setSubs] = useState<Subcategory[]>([]);
   const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const [imageId, setImageId] = useState<number | null>(null);
   // Локальное превью только что выбранного файла (blob) — до/во время загрузки.
   const [localPreview, setLocalPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | Error | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [subsSaving, setSubsSaving] = useState(false);
 
@@ -185,7 +186,7 @@ export function CategoryFormDialog({
       URL.revokeObjectURL(blob);
       setLocalPreview(null);
       setUploadError(
-        err instanceof Error ? err.message : "Не удалось загрузить обложку",
+        err instanceof Error ? err : "Не удалось загрузить обложку",
       );
     } finally {
       setUploading(false);
@@ -223,11 +224,11 @@ export function CategoryFormDialog({
         // 409 — подкатегория занята услугами: понятный текст (как у корневых),
         // а не сырой конфликт-месседж бэка.
         if (err instanceof ApiError && err.status === 409) {
-          setError(SUBCATEGORY_IN_USE);
+          setError(new ApiError(err.code, SUBCATEGORY_IN_USE, err.status));
         } else {
           setError(
             err instanceof Error
-              ? err.message
+              ? err
               : "Не удалось сохранить подкатегории",
           );
         }
@@ -271,7 +272,7 @@ export function CategoryFormDialog({
       try {
         await onSubmit({ name, imageId, subcategories: subs });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Не удалось сохранить");
+        setError(err instanceof Error ? err : "Не удалось сохранить");
         return;
       }
     }
@@ -358,11 +359,7 @@ export function CategoryFormDialog({
               className="hidden"
               onChange={onFile}
             />
-            {uploadError && (
-              <span className="text-xs leading-[1.3] text-danger">
-                {uploadError}
-              </span>
-            )}
+            <ErrorPopup error={uploadError} title="Не удалось загрузить обложку" onDismiss={() => setUploadError(null)} />
           </div>
 
           {/* Название */}
@@ -463,9 +460,7 @@ export function CategoryFormDialog({
 
           <div className="h-px w-full bg-grey-2" />
 
-          {error && (
-            <p className="text-sm leading-[1.3] text-danger">{error}</p>
-          )}
+          <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
           {/* Действия */}
           <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">

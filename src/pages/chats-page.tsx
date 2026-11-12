@@ -30,7 +30,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  ApiError,
   useFileUrl,
   useUploadFile,
   useReopenSupportChat,
@@ -250,9 +249,7 @@ function ChatsList({ onOpen }: { onOpen: (dialogId: number) => void }) {
           </p>
         ) : isError && !data ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <p className="text-base text-danger">
-              Не удалось загрузить обращения.
-            </p>
+            <span className="text-sm text-ink-muted">Данные не загружены.</span>
             <button
               type="button"
               onClick={() => refetch()}
@@ -481,7 +478,7 @@ function StatusSidebar({ chat }: { chat: AdminSupportChat }) {
   const closeChat = useCloseSupportChat();
 
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   return (
     <aside className="h-fit w-full shrink-0 lg:w-[240px] xl:w-[280px]">
@@ -548,7 +545,7 @@ function ChatView({
   const uploadMutation = useUploadFile();
 
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -651,7 +648,7 @@ function ChatView({
       setAttachment(localId, { fileId, status: { kind: "done" } });
     } catch (err) {
       setAttachment(localId, { status: { kind: "error" } });
-      toast.error("Не удалось загрузить файл", err instanceof Error ? err.message : errText(err));
+      toast.error("Не удалось загрузить файл", err instanceof Error ? err : errText(err));
     }
   };
 
@@ -780,11 +777,6 @@ function ChatView({
         )}
         </div>
 
-        {sendMutation.isError && (
-          <p className="text-right text-sm text-danger">
-            Не удалось отправить сообщение.
-          </p>
-        )}
 
         {/* Поле ввода — плашка со скрепкой внутри */}
         <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-grey-4 bg-white px-2 py-2.5 sm:gap-3 sm:px-4">

@@ -19,7 +19,6 @@ import {
 import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import {
-  ApiError,
   useReferralProfit,
   useReferralRules,
   useReferralStats,
@@ -221,7 +220,7 @@ export default function LoyaltyPage() {
   const updateMutation = useUpdateReferralRule();
 
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   const friends = useMemo(
     () => (rules ?? []).filter((r) => r.target_type === "CLIENT"),
@@ -345,7 +344,7 @@ export default function LoyaltyPage() {
       ) : rulesError ? (
         <Card>
           <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-danger">Не удалось загрузить правила.</p>
+            <span className="text-sm text-ink-muted">Данные не загружены.</span>
             <button
               type="button"
               onClick={() => refetchRules()}
@@ -379,7 +378,7 @@ export default function LoyaltyPage() {
       {profitQuery.isError ? (
         <Card>
           <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-danger">Не удалось загрузить график выгоды программы лояльности.</p>
+            <span className="text-sm text-ink-muted">Данные не загружены.</span>
             <button
               type="button"
               onClick={() => profitQuery.refetch()}

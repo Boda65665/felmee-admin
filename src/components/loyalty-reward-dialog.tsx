@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -47,7 +48,7 @@ export function LoyaltyRewardDialog({
   const [value, setValue] = useState(String(percent));
   const [intervalValue, setIntervalValue] = useState(interval);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const wasOpen = useRef(false);
 
   // Инициализация из props при открытии — в фазе рендера, до отрисовки.
@@ -75,7 +76,7 @@ export function LoyaltyRewardDialog({
       await onSave?.(percentNumber, intervalValue);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err : "Не удалось сохранить");
     } finally {
       setSaving(false);
     }
@@ -132,7 +133,7 @@ export function LoyaltyRewardDialog({
           </Select>
         </div>
 
-        {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         <button
           type="button"

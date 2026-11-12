@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 import { createServer } from 'vite';
+import React from 'react';
+import { renderToString } from 'react-dom/server';
+import { QueryCache, QueryClient, QueryClientProvider, QueryObserver } from '@tanstack/react-query';
 
 let server;
 let client;
@@ -34,6 +37,169 @@ after(async () => {
   delete globalThis.localStorage;
   delete globalThis.window;
   await server?.close();
+});
+
+test('typed document API preserves target type, optimistic revision and paginated history', async () => {
+  store.getState().setTokens({ JWT: 'document-admin-token', RT: '' });
+  const registry = await server.ssrLoadModule('/src/lib/api/business-registry.ts');
+  const key = { source: 'REFERRAL', businessType: 'IE', businessEntityId: 42 };
+  const requests = [];
+  fetchHandler = async request => {
+    requests.push({ method: request.method, url: new URL(request.url), body: request.method === 'PUT' ? await request.json() : null });
+    assert.equal(request.headers.get('Authorization'), 'Bearer document-admin-token');
+    return Response.json({ success: true, data: request.url.includes('/requirements')
+      ? { business_type: 'LLC', identity_required: false, required_documents: [] }
+      : { items: [], total: 0, offset: 20, limit: 20 } });
+  };
+  await registry.getDocumentRequirements(key, 'LLC');
+  await registry.putApplicationDocument(key, 'PASSPORT_MAIN', { file_id: 123, expected_revision: 2 });
+  await registry.getDocumentHistory(key, 'PASSPORT_MAIN', 20);
+  assert.equal(requests[0].url.searchParams.get('target_business_type'), 'LLC');
+  assert.equal(requests[1].method, 'PUT');
+  assert(requests[1].url.pathname.endsWith('/documents/by-type/PASSPORT_MAIN'));
+  assert.deepEqual(requests[1].body, { file_id: 123, expected_revision: 2 });
+  assert.equal(requests[2].url.searchParams.get('offset'), '20');
+  assert.equal(requests[2].url.searchParams.get('limit'), '20');
+  let failures = 0;
+  fetchHandler = async () => { failures++; return Response.json({ success: false, message: 'Document revision changed; reload the application', error_code: 'conflict' }, { status: 409 }); };
+  await assert.rejects(registry.putApplicationDocument(key, 'PASSPORT_MAIN', { file_id: 124, expected_revision: 2 }), error => error.status === 409);
+  assert.equal(failures, 1, 'conflicts must not be silently retried with a new revision');
+});
+
+test('live camelCase document requirements and history normalize to the frontend contract', async () => {
+  const registry = await server.ssrLoadModule('/src/lib/api/business-registry.ts');
+  const key = { source: 'REFERRAL', businessType: 'IE', businessEntityId: 42 };
+  fetchHandler = async request => Response.json({ success: true, data: request.url.includes('/history') ? {
+    items: [{ fileId: 123, documentType: 'PASSPORT_MAIN', revision: 2, filename: 'passport.pdf', contentType: 'application/pdf', sizeBytes: 100,
+      status: 'PENDING', is_current: true, comment: null, reviewedAt: null, reviewedBy: null }], total: 1, offset: 0, limit: 20,
+  } : { businessType: 'IE', requiredDocuments: [{ documentType: 'PASSPORT_MAIN', title: 'Паспорт', needsUpload: false }], identityRequired: false } });
+  const requirements = await registry.getDocumentRequirements(key);
+  assert.deepEqual(requirements, { business_type: 'IE', required_documents: [{ document_type: 'PASSPORT_MAIN', title: 'Паспорт', needs_upload: false }], identity_required: false });
+  const history = await registry.getDocumentHistory(key, 'PASSPORT_MAIN');
+  assert.equal(history.items[0].file_id, 123);
+  assert.equal(history.items[0].content_type, 'application/pdf');
+  assert.equal(history.items[0].is_current, true);
+  fetchHandler = async () => Response.json({ success: true, data: {} });
+  await assert.rejects(registry.getDocumentRequirements(key), error => error.code === 'invalid_response');
+  await assert.rejects(registry.getDocumentHistory(key, 'PASSPORT_MAIN'), error => error.code === 'invalid_response');
+});
+
+test('legal status change retires queries at the old application address before refreshing the registry', async () => {
+  const registry = await server.ssrLoadModule('/src/lib/api/business-registry.ts');
+  const key = { source: 'REFERRAL', businessType: 'IE', businessEntityId: 42 };
+  const nextKey = { source: 'REFERRAL', businessType: 'LLC', businessEntityId: 84 };
+  const card = { source: 'REFERRAL', business_type: 'LLC', business_entity_id: 84,
+    status: 'NEW_APPLICATION', bank_status: 'NOT_SENT', bank_error_code: null,
+    submitted_at: '2026-11-12T12:00:00Z',
+    partner: { name: 'Test LLC', inn: '1234567890', phone: '+79991234567', email: 'owner@example.com', activity_type: 'Services', legal_status: 'LLC', identity: null },
+    documents: [], requisites: null };
+  const requests = [];
+  const errors = [];
+  const queryClient = new QueryClient({
+    queryCache: new QueryCache({ onError: error => errors.push(error) }),
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const unsubscribers = [];
+  const observe = (queryKey, queryFn, initialData) => {
+    const observer = new QueryObserver(queryClient, { queryKey, queryFn, initialData });
+    unsubscribers.push(observer.subscribe(() => {}));
+  };
+  const page = { items: [], total: 0, offset: 0, limit: 20, has_more: false };
+  const oldPath = '/api/admin/business-registry/applications/REFERRAL/IE/42';
+  fetchHandler = async request => {
+    const path = new URL(request.url).pathname;
+    requests.push(`${request.method} ${path}`);
+    if (request.method === 'PATCH') return Response.json({ success: true, data: card });
+    if (path.startsWith(oldPath)) return Response.json({ success: false, error_code: 'not_found', message: 'Business application was not found' }, { status: 404 });
+    return Response.json({ success: true, data: page });
+  };
+  let mutation;
+  function Capture() {
+    mutation = registry.useUpdateBusinessPartner();
+    return null;
+  }
+  try {
+    observe(registry.businessRegistryKeys.detail(key), () => registry.getBusinessApplication(key), { ...card, business_type: 'IE', business_entity_id: 42 });
+    for (const kind of ['comments', 'infinite-comments', 'requirements', 'document-history']) {
+      observe(['business-registry', kind, key], () => registry.getBusinessApplicationComments(key), page);
+    }
+    observe(registry.businessRegistryKeys.list({ source: 'REFERRAL' }), () => registry.getBusinessApplications({ source: 'REFERRAL' }), page);
+    renderToString(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(Capture)));
+    assert.equal((await mutation.mutateAsync({ key, body: { business_type: 'LLC' } })).business_type, 'LLC');
+    await new Promise(setImmediate);
+    assert.deepEqual(requests.filter(request => request.startsWith('GET ') && request.includes(oldPath)), [], 'the old address no longer exists after PATCH succeeds');
+    assert.deepEqual(errors, [], 'obsolete queries must not trigger the global error popup');
+    assert.deepEqual(queryClient.getQueryData(registry.businessRegistryKeys.detail(nextKey)), card);
+    assert(requests.includes('GET /api/admin/business-registry/applications'), 'the registry list must still refresh');
+    assert.equal(queryClient.getQueryState(registry.businessRegistryKeys.detail(key)), undefined);
+  } finally {
+    unsubscribers.forEach(unsubscribe => unsubscribe());
+    queryClient.clear();
+  }
+});
+
+test('bank status polling covers queued requests and active review, then stops at a final result', async () => {
+  const registry = await server.ssrLoadModule('/src/lib/api/business-registry.ts');
+  const key = { source: 'REFERRAL', businessType: 'IE', businessEntityId: 42 };
+  const queryClient = new QueryClient();
+  function Capture({ queued }) {
+    registry.useBusinessApplication(key, queued);
+    return null;
+  }
+  try {
+    for (const queued of [true, false]) {
+      renderToString(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(Capture, { queued })));
+      const query = queryClient.getQueryCache().find({ queryKey: registry.businessRegistryKeys.detail(key), exact: true });
+      for (const status of ['NOT_SENT', 'UNDER_REVIEW', 'VERIFIED', 'NOT_VERIFIED', 'TECHNICAL_ERROR']) {
+        queryClient.setQueryData(registry.businessRegistryKeys.detail(key), { bank_status: status });
+        const interval = query.options.refetchInterval?.(query) ?? false;
+        const shouldPoll = status === 'UNDER_REVIEW' || queued && status === 'NOT_SENT';
+        assert.equal(typeof interval === 'number' && interval > 0 && interval <= 5000, shouldPoll,
+          `queued=${queued}, status=${status}: refresh while waiting for the bank, stop after completion`);
+      }
+    }
+  } finally {
+    queryClient.clear();
+  }
+});
+
+test('accepted bank verification updates the card immediately without waiting for its background reload', async () => {
+  const registry = await server.ssrLoadModule('/src/lib/api/business-registry.ts');
+  const key = { source: 'REFERRAL', businessType: 'IE', businessEntityId: 42 };
+  const card = { source: 'REFERRAL', business_type: 'IE', business_entity_id: 42,
+    status: 'DOCUMENTS_VERIFIED', bank_status: 'NOT_VERIFIED', bank_error_code: 'incorrect_registration_address',
+    submitted_at: '2026-11-12T12:00:00Z',
+    partner: { name: 'Test owner', inn: '123456789012', phone: '+79991234567', email: 'owner@example.com', activity_type: 'Services', legal_status: 'IE', identity: null },
+    documents: [], requisites: null };
+  const queued = { action: 'QUEUED', bank_status: 'NOT_SENT' };
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+  let releaseReload;
+  const reload = new Promise(resolve => { releaseReload = resolve; });
+  fetchHandler = request => request.method === 'POST'
+    ? Promise.resolve(Response.json({ success: true, data: queued })) : reload;
+  const observer = new QueryObserver(queryClient, {
+    queryKey: registry.businessRegistryKeys.detail(key), queryFn: () => registry.getBusinessApplication(key), initialData: card,
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  let mutation;
+  function Capture() { mutation = registry.useRequestBusinessBankVerification(); return null; }
+  let request;
+  let timer;
+  try {
+    renderToString(React.createElement(QueryClientProvider, { client: queryClient }, React.createElement(Capture)));
+    request = mutation.mutateAsync(key);
+    const result = await Promise.race([request, new Promise(resolve => { timer = setTimeout(() => resolve(null), 200); })]);
+    assert.deepEqual(result, queued, 'the accepted request must not wait for the card GET');
+    const updated = queryClient.getQueryData(registry.businessRegistryKeys.detail(key));
+    assert.equal(updated.bank_status, 'NOT_SENT', 'keep the actual API status while the UI shows the queued request');
+    assert.equal(updated.bank_error_code, undefined, 'a new check clears the previous rejection');
+  } finally {
+    clearTimeout(timer);
+    releaseReload(Response.json({ success: true, data: { ...card, bank_status: 'NOT_SENT', bank_error_code: undefined } }));
+    await request;
+    unsubscribe();
+    queryClient.clear();
+  }
 });
 
 test('protected document bytes include JWT and retry with refreshed JWT, without credentials in URL', async () => {

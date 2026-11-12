@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -90,7 +91,7 @@ export function UserEditDialog({
     resolver: zodResolver(schema),
     defaultValues: EMPTY,
   });
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   // Адрес и его координаты — вне RHF: координаты появляются только при выборе
   // подсказки, ручной ввод их сбрасывает (gelocation обязателен для PATCH).
   const [address, setAddress] = useState("");
@@ -134,7 +135,7 @@ export function UserEditDialog({
       try {
         await onSave({ ...values, address, geolocation: geo });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Не удалось сохранить");
+        setError(err instanceof Error ? err : "Не удалось сохранить");
         return;
       }
     }
@@ -223,7 +224,7 @@ export function UserEditDialog({
             />
           </div>
 
-          {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+          <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
           <div className="grid grid-cols-1 gap-3 sm:flex sm:items-center sm:justify-end">
             <DialogClose className="flex h-12 items-center justify-center rounded-xl border border-ink/20 bg-white px-6 text-sm font-medium text-ink transition-colors hover:bg-grey-5">

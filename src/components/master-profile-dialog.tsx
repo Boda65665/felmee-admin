@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Home, Info, User } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -88,7 +89,7 @@ export function MasterProfileDialog({
   // Правка доступна, когда передан `onSave` (страница мастеров/салонов). Без
   // него (напр. профиль со страницы «Записи») — только просмотр.
   const editing = Boolean(onSave);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
 
   const {
     register,
@@ -277,7 +278,7 @@ export function MasterProfileDialog({
       await onSave(body);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err : "Не удалось сохранить");
     }
   });
 
@@ -564,7 +565,7 @@ export function MasterProfileDialog({
           </div>
         </SectionCard>
 
-        {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         {/* Действия */}
         <ModalActions>

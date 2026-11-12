@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -37,7 +38,7 @@ function buildMask(digits: string): { filled: string; rest: string } {
 }
 
 export default function LoginPage() {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const [digits, setDigits] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,9 +73,7 @@ export default function LoginPage() {
       navigate(ROUTES.code, { state: { phone, display: filled, ttl } });
     } catch (err) {
       setError(
-        err instanceof ApiError && err.code === "too_many_request"
-          ? "Слишком много запросов, попробуйте позже"
-          : "Не удалось отправить код. Попробуйте ещё раз",
+        err instanceof ApiError ? err : "Не удалось отправить код. Попробуйте ещё раз",
       );
     } finally {
       setSubmitting(false);
@@ -127,9 +126,7 @@ export default function LoginPage() {
       </label>
 
       <div className="flex w-full flex-col items-center gap-2">
-        {error && (
-          <p className="text-base leading-[1.25] text-danger">{error}</p>
-        )}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         <button
           type="submit"

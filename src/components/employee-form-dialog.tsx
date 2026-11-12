@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, X } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -85,7 +86,7 @@ export function EmployeeFormDialog({
     defaultValues: { firstName: "", lastName: "", phone: "" },
   });
   const [done, setDone] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
 
   // Сброс формы под предзаполнение при открытии.
   useEffect(() => {
@@ -104,7 +105,7 @@ export function EmployeeFormDialog({
     try {
       await onSubmit(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err : "Не удалось сохранить");
       return;
     }
     if (mode === "create") setDone(true);
@@ -183,7 +184,7 @@ export function EmployeeFormDialog({
 
             <div className="h-px w-full bg-grey-2" />
 
-            {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+            <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
             {/* Действия */}
             <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">

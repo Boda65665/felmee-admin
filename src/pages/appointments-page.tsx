@@ -34,7 +34,6 @@ import {
   type AppointmentViewState,
 } from "@/components";
 import {
-  ApiError,
   useClient,
   useRecord,
 
@@ -250,8 +249,7 @@ const AppointmentsPage = () => {
     if (openModal !== "view" || !detailQuery.isError) return;
     toast.error(
       "Не удалось загрузить заказ",
-      detailQuery.error instanceof ApiError
-        ? detailQuery.error.message
+      detailQuery.error instanceof Error ? detailQuery.error
         : "Попробуйте ещё раз.",
     );
     setOpenModal(null);
@@ -262,8 +260,7 @@ const AppointmentsPage = () => {
     if (clientId === null || !clientQuery.isError) return;
     toast.error(
       "Не удалось загрузить клиента",
-      clientQuery.error instanceof ApiError
-        ? clientQuery.error.message
+      clientQuery.error instanceof Error ? clientQuery.error
         : "Попробуйте ещё раз.",
     );
     setClientId(null);
@@ -309,7 +306,7 @@ const AppointmentsPage = () => {
       // Тост + проброс: диалог отмены покажет ошибку инлайном и не закроется.
       toast.error(
         "Не удалось отменить запись",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -550,9 +547,7 @@ const AppointmentsPage = () => {
             </p>
           ) : isError && !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-base text-danger">
-                Не удалось загрузить записи.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
               <button
                 type="button"
                 onClick={() => refetch()}

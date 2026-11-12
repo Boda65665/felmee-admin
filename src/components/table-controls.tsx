@@ -78,15 +78,18 @@ function ColumnTrigger({
   icon: Icon,
   active,
   count,
+  ariaLabel,
 }: {
   label: string;
   icon: ComponentType<{ className?: string }>;
   active: boolean;
   /** Число выбранных значений — показывается бейджем (для мультивыбора). */
   count?: number;
+  ariaLabel?: string;
 }) {
   return (
     <PopoverTrigger
+      aria-label={ariaLabel}
       className={cn(
         "flex items-center gap-1.5 text-left uppercase outline-none transition-colors",
         active && "font-semibold text-brand",
@@ -147,6 +150,7 @@ export function CheckboxFilterMenu<T extends string>({
   selected,
   onApply,
   allOption,
+  ariaLabel,
 }: {
   label: string;
   options: { value: T; label: string }[];
@@ -154,6 +158,7 @@ export function CheckboxFilterMenu<T extends string>({
   onApply: (values: T[]) => void;
   /** Показать пункт «Все», отмечающий/снимающий все опции разом. */
   allOption?: boolean;
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const allChecked = selected.length === options.length;
@@ -174,6 +179,7 @@ export function CheckboxFilterMenu<T extends string>({
         icon={SlidersHorizontal}
         active={selected.length > 0}
         count={selected.length}
+        ariaLabel={ariaLabel}
       />
       <PopoverContent className="flex w-[220px] flex-col gap-0.5">
         {allOption && (

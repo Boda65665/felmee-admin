@@ -3,8 +3,9 @@ import { create } from "zustand";
 interface CooldownState {
   /** Таймстамп (мс) окончания кулдауна, либо null — кулдауна нет. */
   until: number | null;
+  code: string | null;
   /** Запустить кулдаун на `seconds` секунд (продлевает, если новый дедлайн дальше). */
-  start: (seconds: number) => void;
+  start: (seconds: number, code?: string | null) => void;
   /** Сбросить кулдаун (закрыть модалку). */
   clear: () => void;
 }
@@ -16,12 +17,13 @@ interface CooldownState {
  */
 export const useCooldownStore = create<CooldownState>((set, get) => ({
   until: null,
-  start: (seconds) => {
+  code: null,
+  start: (seconds, code = null) => {
     if (!Number.isFinite(seconds) || seconds <= 0) return;
     const next = Date.now() + seconds * 1000;
     const current = get().until;
     if (current && current >= next) return; // уже есть более дальний дедлайн
-    set({ until: next });
+    set({ until: next, code });
   },
-  clear: () => set({ until: null }),
+  clear: () => set({ until: null, code: null }),
 }));

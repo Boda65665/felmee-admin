@@ -145,9 +145,7 @@ const HistoryPage = () => {
             </p>
           ) : isError && !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-base text-danger">
-                Не удалось загрузить историю действий.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
               <button
                 type="button"
                 onClick={() => refetch()}

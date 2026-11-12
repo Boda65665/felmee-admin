@@ -107,7 +107,7 @@ const authMiddleware: Middleware = {
     if (response.status === 429) {
       try {
         const body = await response.clone().json();
-        useCooldownStore.getState().start(Number(body?.data?.TTL));
+        useCooldownStore.getState().start(Number(body?.data?.TTL), body?.error_code ?? body?.codeError ?? null);
       } catch {
         // тело не JSON — просто не показываем таймер
       }

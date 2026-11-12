@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -87,7 +88,7 @@ export function ComplaintDecisionDialog({
   const [subjectMessage, setSubjectMessage] = useState("");
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const wasOpen = useRef(false);
 
   // Сброс при открытии — до отрисовки, чтобы не мигало прошлым вводом.
@@ -131,7 +132,7 @@ export function ComplaintDecisionDialog({
       });
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось вынести решение");
+      setError(err instanceof Error ? err : "Не удалось вынести решение");
     } finally {
       setSaving(false);
     }
@@ -195,7 +196,7 @@ export function ComplaintDecisionDialog({
           onChange={setComment}
         />
 
-        {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
           <DialogClose className="flex h-12 flex-1 items-center justify-center rounded-xl border border-grey-2 text-base font-medium text-ink transition-colors hover:bg-grey-5">

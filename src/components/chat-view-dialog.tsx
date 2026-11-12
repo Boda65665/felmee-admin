@@ -193,9 +193,7 @@ export function ChatViewDialog({
           Загрузка переписки…
         </p>
       ) : historyQuery.isError ? (
-        <p className="py-8 text-center text-base text-danger">
-          Не удалось загрузить переписку.
-        </p>
+        <span className="text-sm text-ink-muted">Данные не загружены.</span>
       ) : messages.length === 0 ? (
         <p className="py-8 text-center text-base text-ink-muted">
           В этом чате пока нет сообщений.
@@ -207,7 +205,7 @@ export function ChatViewDialog({
               {historyQuery.isFetchingNextPage ? "Загрузка…" : "Загрузить предыдущие сообщения"}
             </button>
           )}
-          {historyQuery.isFetchNextPageError && <p role="alert" className="text-center text-sm text-danger">Не удалось загрузить предыдущие сообщения. Попробуйте ещё раз.</p>}
+          {historyQuery.isFetchNextPageError && <span className="text-sm text-ink-muted">Данные не загружены.</span>}
           {messages.map((message) => (
             <Bubble
               key={message.id}
@@ -254,9 +252,7 @@ export function ChatViewDialog({
             Загрузка чатов…
           </p>
         ) : chatsQuery.isError ? (
-          <p className="py-8 text-center text-base text-danger">
-            Не удалось загрузить чаты пользователя.
-          </p>
+          <span className="text-sm text-ink-muted">Данные не загружены.</span>
         ) : chats.length === 0 ? (
           <p className="py-8 text-center text-base text-ink-muted">
             У пользователя пока нет чатов.

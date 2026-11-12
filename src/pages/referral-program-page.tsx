@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 import { useInfiniteReferralPartners } from "@/lib/api/infinite-lists";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +21,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  ApiError,
   useReferralPartnerSummary,
   useReferralSystemLevels,
   useUpdateReferralLevelRate,
@@ -151,7 +151,7 @@ function LevelCard({
 }) {
   const [value, setValue] = useState(String(level.reward_percent));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
 
   const dirty = value.trim() !== String(level.reward_percent);
   const parsed = Number(value);
@@ -168,7 +168,7 @@ function LevelCard({
     try {
       await onSave(parsed);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Ошибка");
+      setError(err instanceof Error ? err : "Ошибка");
     } finally {
       setSaving(false);
     }
@@ -207,7 +207,7 @@ function LevelCard({
             {saving ? "…" : "Сохранить"}
           </button>
         </div>
-        {error && <span className="text-xs text-danger">{error}</span>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
       </div>
     </div>
   );
@@ -302,7 +302,7 @@ const ReferralProgramPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось сохранить ставку",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -434,12 +434,8 @@ const ReferralProgramPage = () => {
             {partnersQuery.isLoading ? (
               <p className="py-8 text-center text-ink-muted">Загрузка партнёров…</p>
             ) : partnersQuery.isError && !partnersQuery.data ? (
-              <p className="mt-9 text-sm text-danger">
-                {partnersQuery.error instanceof ApiError
-                  ? partnersQuery.error.message
-                  : "Не удалось загрузить партнёров"}
-                <button type="button" onClick={() => partnersQuery.refetch()} disabled={partnersQuery.isFetching} className="ml-3 underline">Повторить</button>
-              </p>
+              <div className="mt-9 text-sm text-ink-muted"><button type="button" onClick={() => partnersQuery.refetch()} disabled={partnersQuery.isFetching} className="ml-3 underline">Повторить</button>
+              </div>
             ) : (
               <div className="mt-9 flex flex-col gap-4">
                 <DataTable
@@ -465,9 +461,7 @@ const ReferralProgramPage = () => {
                 Загрузка уровней…
               </p>
             ) : levelsQuery.isError ? (
-              <p className="py-8 text-center text-base text-danger">
-                Не удалось загрузить уровни и ставки.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
             ) : (
               <>
                 <LevelSection

@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { X } from "lucide-react";
 import { useState } from "react";
 
@@ -7,7 +8,6 @@ import {
   DialogContent,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ApiError } from "@/lib/api";
 
 const REASON_MAX = 1000;
 
@@ -28,7 +28,7 @@ export function RejectReasonDialog({
 }) {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
 
   /** Сброс текста/ошибки при закрытии (кроме момента отправки). */
   function handleOpenChange(next: boolean) {
@@ -51,8 +51,7 @@ export function RejectReasonDialog({
       onOpenChange(false);
     } catch (err) {
       setError(
-        err instanceof ApiError
-          ? err.message
+        err instanceof Error ? err
           : "Не удалось отклонить заявку. Попробуйте ещё раз",
       );
     } finally {
@@ -90,7 +89,7 @@ export function RejectReasonDialog({
           {reason.length} / {REASON_MAX}
         </p>
 
-        {error && <p className="text-sm text-danger">{error}</p>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         <div className="flex items-center justify-end gap-3">
           <DialogClose className="flex items-center justify-center rounded-[10px] border border-grey-4 bg-white px-[18px] py-3 text-sm font-semibold text-ink transition-colors hover:bg-grey-5">

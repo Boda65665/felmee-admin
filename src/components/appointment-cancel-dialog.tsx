@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { useRef, useState } from "react";
 
 import { Dialog, DialogDescription } from "@/components/ui/dialog";
@@ -44,7 +45,7 @@ export function AppointmentCancelDialog({
   const [otherText, setOtherText] = useState("");
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const wasOpen = useRef(false);
 
   // Сброс при открытии — в фазе рендера, до отрисовки, чтобы не мигало старым
@@ -71,7 +72,7 @@ export function AppointmentCancelDialog({
       await onConfirm?.(value);
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось отменить запись");
+      setError(err instanceof Error ? err : "Не удалось отменить запись");
     } finally {
       setSaving(false);
     }
@@ -128,9 +129,7 @@ export function AppointmentCancelDialog({
             )}
           </RadioGroup>
 
-          {error && (
-            <p className="w-full text-base leading-[1.3] text-danger">{error}</p>
-          )}
+          <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
           <ModalDivider />
 

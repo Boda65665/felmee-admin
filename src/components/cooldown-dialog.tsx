@@ -26,6 +26,7 @@ function formatLeft(seconds: number): string {
  */
 export function CooldownDialog() {
   const until = useCooldownStore((s) => s.until);
+  const code = useCooldownStore((s) => s.code);
   const clear = useCooldownStore((s) => s.clear);
   const [now, setNow] = useState(() => Date.now());
 
@@ -65,6 +66,7 @@ export function CooldownDialog() {
         <span className="text-4xl font-semibold tabular-nums tracking-tight text-brand">
           {formatLeft(remaining)}
         </span>
+        {code && <p className="break-all text-xs text-ink-muted">Код: {code}</p>}
       </DialogContent>
     </Dialog>
   );

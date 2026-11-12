@@ -19,6 +19,7 @@ import {
 } from "@/components";
 import {
   useAddDocumentAttachments,
+  usePutApplicationDocument,
   useRequestBusinessBankVerification,
   type BusinessApplicationCard,
 
@@ -32,6 +33,7 @@ import {
   type BusinessApplicationSource,
   type BusinessApplicationStatus,
   type BusinessType,
+  type BusinessBankStatus,
 } from "@/lib/api/business-registry";
 import { cn } from "@/lib/utils";
 import { usePersistentState } from "@/lib/use-persistent-state";
@@ -140,6 +142,9 @@ const DocumentsPage = () => {
     "documents.statuses",
     [],
   );
+  const [bankStatusSelection, setBankStatuses] = usePersistentState<BusinessBankStatus[] | BusinessBankStatus | null>("documents.bankStatus", []);
+  // Сохраняем одиночный выбор, уже сделанный до обновления интерфейса.
+  const bankStatuses = useMemo(() => Array.isArray(bankStatusSelection) ? bankStatusSelection : bankStatusSelection ? [bankStatusSelection] : [], [bankStatusSelection]);
   // API принимает один business_type; слой выборки объединяет выбранные типы.
   const [businessTypes, setBusinessTypes] = usePersistentState<BusinessType[]>(
     "documents.businessTypes",
@@ -175,6 +180,7 @@ const DocumentsPage = () => {
       source: activeTab,
       business_types: businessTypes,
       statuses: statuses.length ? statuses : undefined,
+      bank_statuses: bankStatuses,
       submitted_from: submittedFrom,
       submitted_to: submittedTo,
       search: debouncedQuery || undefined,
@@ -185,10 +191,22 @@ const DocumentsPage = () => {
   const rows = useMemo(() => data?.items ?? [], [data]);
 
   // Карточка открытой заявки + комментарии + мутации по ней.
-  const cardQuery = useBusinessApplication(selected?.key ?? null);
+  const bankVerification = useRequestBusinessBankVerification();
+  const bankVerificationQueued = bankVerification.data?.action === "QUEUED" &&
+    bankVerification.variables?.source === selected?.key.source &&
+    bankVerification.variables?.businessType === selected?.key.businessType &&
+    bankVerification.variables?.businessEntityId === selected?.key.businessEntityId;
+  const cardQuery = useBusinessApplication(selected?.key ?? null, bankVerificationQueued);
+  const bankStatus = cardQuery.data?.bank_status;
+  const resetBankVerification = bankVerification.reset;
+  useEffect(() => {
+    if (bankVerificationQueued && bankStatus && bankStatus !== "NOT_SENT" && bankStatus !== "UNDER_REVIEW") {
+      resetBankVerification();
+    }
+  }, [bankVerificationQueued, bankStatus, resetBankVerification]);
   const commentsQuery = useInfiniteBusinessComments(selected?.key ?? null);
   const addAttachments = useAddDocumentAttachments();
-  const bankVerification = useRequestBusinessBankVerification();
+  const putDocument = usePutApplicationDocument();
   const updatePartner = useUpdateBusinessPartner();
   const updateRequisites = useUpdateBusinessRequisites();
   const setDecision = useSetDocumentDecision();
@@ -231,8 +249,18 @@ const DocumentsPage = () => {
     });
   };
 
-  const filterValues = useRef({ businessTypes, statuses, submittedRange });
-  filterValues.current = { businessTypes, statuses, submittedRange };
+  const filterValues = useRef({ businessTypes, statuses, submittedRange, bankStatuses });
+  filterValues.current = { businessTypes, statuses, submittedRange, bankStatuses };
+  const bankStatusHeader = useCallback(() => (
+    <CheckboxFilterMenu
+      label="проверка банком"
+      ariaLabel="Фильтр проверки банком"
+      options={(Object.keys(BUSINESS_BANK_META) as BusinessBankStatus[]).map(value => ({ value, label: BUSINESS_BANK_META[value].label }))}
+      selected={filterValues.current.bankStatuses}
+      onApply={setBankStatuses}
+      allOption
+    />
+  ), [setBankStatuses]);
   const businessTypeHeader = useCallback(() => (
     <CheckboxFilterMenu label="юр. статус" options={LEGAL_OPTIONS} selected={filterValues.current.businessTypes} onApply={setBusinessTypes} />
   ), [setBusinessTypes]);
@@ -283,8 +311,8 @@ const DocumentsPage = () => {
     },
     {
       id: "bank_status",
-      header: () => <span>проверка банком</span>,
-      meta: { mobileLabel: "Проверка банком" },
+      header: bankStatusHeader,
+      meta: { mobileLabel: "Проверка банком", mobileFilter: true },
       cell: ({ row }) => <BankStatusCell application={row.original} />,
     },
   ];
@@ -312,6 +340,12 @@ const DocumentsPage = () => {
           if (!key) throw new Error("Заявка не выбрана");
           acceptCard(await addAttachments.mutateAsync({ key, fileIds }), key);
         }}
+        onPutDocument={async (documentType, fileId, expectedRevision) => {
+          if (!key) throw new Error("Заявка не выбрана");
+          acceptCard(await putDocument.mutateAsync({ key, documentType, body: { file_id: fileId, expected_revision: expectedRevision } }), key);
+        }}
+        onReloadCard={async () => { await cardQuery.refetch({ throwOnError: true }); }}
+        bankVerificationQueued={bankVerificationQueued}
         onBankVerification={async () => {
           if (!key) throw new Error("Заявка не выбрана");
           const result = await bankVerification.mutateAsync(key);
@@ -358,7 +392,7 @@ const DocumentsPage = () => {
           </p>
         ) : isError && !data ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <p className="text-base text-danger">Не удалось загрузить заявки.</p>
+            <span className="text-sm text-ink-muted">Данные не загружены.</span>
             <button
               type="button"
               onClick={() => refetch()}

@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -34,7 +35,7 @@ export function UnblockUserDialog({
 }) {
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const wasOpen = useRef(false);
 
   if (open && !wasOpen.current) {
@@ -52,7 +53,7 @@ export function UnblockUserDialog({
       await onConfirm();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось разблокировать");
+      setError(err instanceof Error ? err : "Не удалось разблокировать");
     } finally {
       setSubmitting(false);
     }
@@ -99,7 +100,7 @@ export function UnblockUserDialog({
           className="h-32 w-full resize-none rounded-xl border border-grey-1 bg-white px-4 py-3 text-base leading-[1.3] text-ink outline-none transition-colors placeholder:text-grey-1 focus:border-brand"
         />
 
-        {error && <p className="text-sm leading-[1.3] text-danger">{error}</p>}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <DialogClose className="flex h-12 flex-1 items-center justify-center rounded-xl border border-ink/20 bg-white text-sm font-medium text-ink transition-colors hover:bg-grey-5">

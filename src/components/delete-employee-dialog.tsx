@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -28,7 +29,7 @@ export function DeleteEmployeeDialog({
   onConfirm: () => void | Promise<void>;
 }) {
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const wasOpen = useRef(false);
 
   if (open && !wasOpen.current) {
@@ -43,7 +44,7 @@ export function DeleteEmployeeDialog({
     try {
       await onConfirm();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось удалить");
+      setError(err instanceof Error ? err : "Не удалось удалить");
     } finally {
       setSubmitting(false);
     }
@@ -72,9 +73,7 @@ export function DeleteEmployeeDialog({
             нельзя будет отменить.
           </DialogDescription>
         </div>
-        {error && (
-          <p className="text-sm leading-[1.3] text-danger">{error}</p>
-        )}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <DialogClose className="flex h-12 flex-1 items-center justify-center rounded-xl border border-grey-2 text-base font-medium text-ink transition-colors hover:bg-grey-5">
             Отмена

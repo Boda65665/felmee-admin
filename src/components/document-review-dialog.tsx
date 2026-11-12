@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { businessPartnerSchema as partnerSchema, type BusinessPartnerForm as PartnerForm } from "@/lib/business-partner-form";
+import { useEffect, useId, useRef, useState } from "react";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 import {
   X,
@@ -30,8 +31,13 @@ import {
   type BusinessApplicationDocumentDecision,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { BUSINESS_BANK_META } from "@/lib/business-bank-status";
-import { buildBusinessPatch } from "@/lib/api/business-registry";
+import { BUSINESS_BANK_META, BALANCE_TRANSFER_META, isBeneficiaryMigrationLocked, isBusinessApplicationConfirmed } from "@/lib/business-bank-status";
+import { formatRubles } from "@/lib/format";
+import { ErrorPopup } from "./error-popup";
+import { useErrorPopupStore } from "@/lib/error-popup-store";
+import { buildBusinessPatch, buildBusinessPartnerPatch, documentReviewBlockReason, documentReviewCompleteBlockReason } from "@/lib/api/business-registry";
+import { useDocumentRequirements, useDocumentHistory, type RegistrationDocumentType } from "@/lib/api/business-registry";
+import { DOCUMENT_TYPE_LABELS, typeChangeFiles, type DocumentDrafts } from "@/lib/document-types";
 import { uploadFile, getFileStatus, getDocumentBlob, isProtectedFileUrl, useDocumentFile } from "@/lib/api/files";
 import { initials } from "./avatar";
 import { ModalShell } from "./modal-shell";
@@ -65,6 +71,7 @@ const TAB_LABEL: Record<Tab, string> = {
 const FOOTER_SECONDARY = "flex min-h-11 flex-1 items-center justify-center rounded-lg border border-grey-4 px-4 text-sm font-medium text-ink transition-colors hover:bg-grey-5 sm:min-h-10";
 const FOOTER_PRIMARY = "flex min-h-11 flex-1 items-center justify-center rounded-lg bg-brand px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:bg-brand/40 sm:min-h-10";
 
+
 /** Дата комментария `created_at` (ISO) → «28.04.2026, 13:00». */
 const formatCommentDate = (value: string): string => {
   try {
@@ -96,31 +103,6 @@ const DRAFT_LABEL: Record<
   APPROVE: "черновик: подтверждён",
   REQUEST_REUPLOAD: "черновик: перезагрузка",
 };
-
-/** Схема формы данных партнёра (все поля опциональны — частичная правка). */
-const partnerSchema = z.object({
-  full_name: z.string().trim().optional(),
-  inn: z.string().trim().optional(),
-  phone: z.string().trim().optional(),
-  email: z.string().trim().email("Проверьте e-mail").or(z.literal("")).optional(),
-  activity_type: z.string().trim().optional(),
-  business_type: z.enum(["SE", "IE", "LLC"]),
-  comment: z.string().trim().optional(),
-  identity: z.object({
-    registration_address: z.string().trim().min(1, "Укажите адрес"),
-    passport_series: z.string().regex(/^\d{4}$/, "4 цифры"),
-    passport_number: z.string().regex(/^\d{6}$/, "6 цифр"),
-    birth_date: z.string().date("Укажите дату"),
-    passport_issue_date: z.string().date("Укажите дату"),
-    department_code: z.string().regex(/^\d{3}-\d{3}$/, "Формат 000-000"),
-    birth_place: z.string().trim().min(1, "Укажите место рождения"),
-  }).refine((v) => v.birth_date <= format(new Date(), "yyyy-MM-dd"), {
-    path: ["birth_date"], message: "Дата не может быть в будущем",
-  }).refine((v) => v.passport_issue_date >= v.birth_date && v.passport_issue_date <= format(new Date(), "yyyy-MM-dd"), {
-    path: ["passport_issue_date"], message: "Проверьте дату выдачи",
-  }).optional(),
-});
-type PartnerForm = z.infer<typeof partnerSchema>;
 
 /** Юр. статус → подпись для селекта. */
 const BUSINESS_TYPE_OPTIONS: { value: PartnerForm["business_type"]; label: string }[] = [
@@ -201,10 +183,10 @@ function DocRow({
   const StatusIcon = meta.icon;
   const { data: file } = useFileUrl(doc.file_id, "FULL");
   const [downloading, setDownloading] = useState(false);
-  const [downloadError, setDownloadError] = useState(false);
+  const [downloadError, setDownloadError] = useState<unknown>(null);
   const downloadOriginal = async () => {
     setDownloading(true);
-    setDownloadError(false);
+    setDownloadError(null);
     try {
       if (file?.url && !isProtectedFileUrl(file.url)) {
         const link = document.createElement("a");
@@ -222,8 +204,8 @@ function DocRow({
       link.download = doc.filename;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      setDownloadError(true);
+    } catch (error) {
+      setDownloadError(error);
     } finally {
       setDownloading(false);
     }
@@ -238,6 +220,7 @@ function DocRow({
         <button type="button" onClick={onView} title={doc.filename} className="w-fit max-w-full truncate text-left text-sm font-medium text-brand underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-brand">
           {doc.filename}
         </button>
+        <span className="text-xs text-ink-muted">{doc.document_type ? DOCUMENT_TYPE_LABELS[doc.document_type] : "Документ"}{doc.revision ? ` · Версия ${doc.revision}` : ""}</span>
         <span className="text-xs text-ink-muted">{parts.join(" · ")}</span>
       </div>
       <span
@@ -261,30 +244,37 @@ function DocRow({
       >
         <img src={documentDownload} alt="" />
       </button>
-      {downloadError && <span role="alert" className="w-full text-xs text-danger">Не удалось скачать файл. Повторите попытку.</span>}
+      <ErrorPopup error={downloadError} title="Не удалось скачать файл" onDismiss={() => setDownloadError(null)} />
     </div>
   );
 }
 
-/** Предпросмотр документа + решение по нему (открывается «глазом»). */
+/** Предпросмотр документа; решение доступно только для новой заявки и PENDING. */
 function DocPreview({
   doc,
+  applicationStatus,
   onDecision,
   onBack,
+  readOnly = false,
 }: {
   doc: BusinessApplicationDocument;
+  applicationStatus: BusinessApplicationCard["status"];
   onDecision: (body: BusinessApplicationDocumentDecision) => Promise<void>;
   onBack: () => void;
+  readOnly?: boolean;
 }) {
   const { data: file, isError: fileError, refetch: reloadFile } = useDocumentFile(doc.file_id);
   const [reupload, setReupload] = useState(false);
   const [comment, setComment] = useState(doc.draft_comment ?? "");
   const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
   const isImage = (doc.content_type ?? "").startsWith("image/");
   const isPdf = doc.content_type === "application/pdf";
+  const blockedReason = documentReviewBlockReason(applicationStatus, doc.status);
+  const blockedHintId = useId();
 
   const submit = async (decision: BusinessApplicationDocumentDecision["decision"]) => {
+    if (readOnly || blockedReason) return;
     setError(null);
     setPending(true);
     try {
@@ -294,7 +284,7 @@ function DocPreview({
       });
       onBack();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Не удалось сохранить решение");
+      setError(e instanceof ApiError ? e : "Не удалось сохранить решение");
     } finally {
       setPending(false);
     }
@@ -338,7 +328,7 @@ function DocPreview({
         </a>
       )}
 
-      {reupload && (
+      {reupload && !blockedReason && !readOnly && (
         <TextAreaField
           label="Что не так с документом"
           value={comment}
@@ -347,13 +337,17 @@ function DocPreview({
           rows={3}
         />
       )}
-      {error && <p className="text-sm text-danger">{error}</p>}
+      <ErrorPopup error={error} onDismiss={() => setError(null)} />
+      {!readOnly && blockedReason && <p id={blockedHintId} role="status" className="text-sm text-ink-muted">{blockedReason}</p>}
 
-      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className={cn("grid w-full grid-cols-1 gap-3", !readOnly && "sm:grid-cols-3")}>
+        {!readOnly && <>
         <button
           type="button"
           onClick={() => submit("APPROVE")}
-          disabled={pending}
+          disabled={pending || Boolean(blockedReason)}
+          aria-describedby={blockedReason ? blockedHintId : undefined}
+          title={blockedReason ?? undefined}
           className="flex h-12 flex-1 items-center justify-center rounded-full bg-success text-base font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
         >
           {pending ? "Сохранение…" : "Подтвердить"}
@@ -363,11 +357,14 @@ function DocPreview({
           onClick={() =>
             reupload ? submit("REQUEST_REUPLOAD") : setReupload(true)
           }
-          disabled={pending || (reupload && comment.trim() === "")}
+          disabled={pending || Boolean(blockedReason) || (reupload && comment.trim() === "")}
+          aria-describedby={blockedReason ? blockedHintId : undefined}
+          title={blockedReason ?? undefined}
           className="flex h-12 flex-1 items-center justify-center rounded-full border border-grey-2 text-base font-medium text-ink transition-colors hover:bg-grey-5 disabled:opacity-60"
         >
           Запросить перезагрузку
         </button>
+        </>}
         <button
           type="button"
           onClick={onBack}
@@ -423,6 +420,9 @@ export function DocumentReviewDialog({
   onCommentsLoadMore,
   onCommentsRetry,
   onAttachFiles,
+  onPutDocument,
+  onReloadCard,
+  bankVerificationQueued = false,
   onBankVerification,
   onPartnerSave,
   onRequisitesSave,
@@ -442,6 +442,9 @@ export function DocumentReviewDialog({
   onCommentsLoadMore: () => unknown;
   onCommentsRetry: () => void;
   onAttachFiles: (fileIds: number[]) => Promise<void>;
+  onPutDocument: (type: RegistrationDocumentType, fileId: number, expectedRevision: number) => Promise<void>;
+  onReloadCard: () => Promise<void>;
+  bankVerificationQueued?: boolean;
   onBankVerification: () => Promise<"QUEUED" | "ALREADY_CURRENT">;
   onPartnerSave: (body: BusinessApplicationPartnerUpdate) => Promise<void>;
   onRequisitesSave: (body: BusinessApplicationRequisitesUpdate) => Promise<void>;
@@ -454,13 +457,46 @@ export function DocumentReviewDialog({
   const [tab, setTab] = useState<Tab>("partner");
   // Файл, открытый в предпросмотре (клик по «глазу» в списке) либо null — список.
   const [previewId, setPreviewId] = useState<number | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | Error | null>(null);
   const [completing, setCompleting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [documentSaving, setDocumentSaving] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadType, setUploadType] = useState<RegistrationDocumentType | "ADDITIONAL">("ADDITIONAL");
+  const [uploadRevision, setUploadRevision] = useState(0);
+  const [uploadSelection, setUploadSelection] = useState<File[]>([]);
+  const [uploadConflict, setUploadConflict] = useState(false);
+  const [typeDrafts, setTypeDrafts] = useState<DocumentDrafts>({});
+  const [typeUploads, setTypeUploads] = useState<Partial<Record<RegistrationDocumentType, string>>>({});
+  const hasUploads = uploading || Object.keys(typeUploads).length > 0;
+  const [historyType, setHistoryType] = useState<RegistrationDocumentType | null>(null);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const [historyPreview, setHistoryPreview] = useState<BusinessApplicationDocument | null>(null);
+  const uploadGeneration = useRef(0);
+  useEffect(() => () => { uploadGeneration.current++; }, []);
   const [bankPending, setBankPending] = useState(false);
-  const [bankMessage, setBankMessage] = useState<string | null>(null);
-  const [editingIdentity, setEditingIdentity] = useState(false);
+  const [bankAlreadyCurrent, setBankAlreadyCurrent] = useState(false);
+  const bankQueued = bankVerificationQueued && card?.bank_status === "NOT_SENT";
+  const migrationLocked = isBeneficiaryMigrationLocked(card?.balance_transfer_status);
+  const bankProcessing = bankQueued || card?.bank_status === "UNDER_REVIEW" || migrationLocked;
+  const confirmed = isBusinessApplicationConfirmed(card);
+  const transferMeta = card?.balance_transfer_status ? BALANCE_TRANSFER_META[card.balance_transfer_status] : null;
+  const bankStatusMeta = card?.bank_status === "VERIFIED" && !confirmed
+    ? { label: "Ожидается перенос остатка", className: "text-status-blue" }
+    : BUSINESS_BANK_META[bankQueued ? "UNDER_REVIEW" : card?.bank_status ?? "NOT_SENT"];
+  const bankMessage = bankQueued ? "Проверка банка поставлена в очередь"
+    : bankAlreadyCurrent && confirmed ? "Подтверждённые банком данные актуальны" : null;
   const wasOpen = useRef(false);
+
+  useEffect(() => {
+    if (!open || !card?.bank_error_code) return;
+    console.warn("[documents] Ошибка проверки банком", {
+      code: card.bank_error_code,
+      source: card.source,
+      businessType: card.business_type,
+      businessEntityId: card.business_entity_id,
+    });
+  }, [open, card?.bank_error_code, card?.source, card?.business_type, card?.business_entity_id]);
 
   const partnerForm = useForm<PartnerForm>({
     resolver: zodResolver(partnerSchema),
@@ -468,20 +504,26 @@ export function DocumentReviewDialog({
   const requisitesForm = useForm<RequisitesForm>({
     resolver: zodResolver(requisitesSchema),
   });
+  const selectedBusinessType = partnerForm.watch("business_type");
+  const applicationKey = card ? { source: card.source, businessType: card.business_type, businessEntityId: card.business_entity_id } : null;
+  const changingType = Boolean(card && selectedBusinessType && selectedBusinessType !== card.business_type);
+  const requirements = useDocumentRequirements(applicationKey, changingType ? selectedBusinessType : undefined, open && changingType);
+  const currentRequirements = useDocumentRequirements(applicationKey, undefined, open && uploadOpen);
+  const history = useDocumentHistory(open ? applicationKey : null, historyType, historyOffset);
+  const typeFilesComplete = Boolean(!changingType || !requirements.isFetching && !requirements.isError && requirements.data && requirements.data.business_type === selectedBusinessType && requirements.data.required_documents.every(item => !item.needs_upload || typeDrafts[item.document_type]));
 
   // Сброс вкладки/предпросмотра при открытии.
   if (open && !wasOpen.current) {
     setTab("partner");
     setPreviewId(null);
     setFormError(null);
-    setBankMessage(null);
+    setBankAlreadyCurrent(false);
   }
   wasOpen.current = open;
 
   // Предзаполнение форм, когда подъехала карточка.
   useEffect(() => {
     if (!card) return;
-    setEditingIdentity(Boolean(card.partner.identity));
     partnerForm.reset({
       full_name: card.partner.name ?? "",
       inn: card.partner.inn ?? "",
@@ -509,25 +551,53 @@ export function DocumentReviewDialog({
       comment: "",
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card]);
+  }, [card?.partner, card?.requisites, card?.business_type]);
 
   if (!review) return null;
 
   const savePartner = partnerForm.handleSubmit(async (values) => {
     setFormError(null);
     try {
-      const body = buildBusinessPatch(values, partnerForm.formState.dirtyFields);
+      if (!card) return;
+      if (hasUploads) return;
+      if (bankProcessing) {
+        setFormError("Дождитесь завершения проверки банком, прежде чем изменять данные получателя.");
+        return;
+      }
+      const body = buildBusinessPartnerPatch(values, partnerForm.formState.dirtyFields, card.business_type);
+      if (values.business_type !== card.business_type) {
+        if (card.status !== "DOCUMENTS_VERIFIED") {
+          setFormError("Сначала завершите проверку документов текущей заявки, затем измените юридический статус.");
+          return;
+        }
+        if (requirements.isFetching) return;
+        if (!requirements.data || requirements.data.business_type !== values.business_type) {
+          setFormError("Дождитесь загрузки требований к документам нового статуса.");
+          return;
+        }
+        body.files = typeChangeFiles(requirements.data, typeDrafts);
+        const required = ["full_name", "inn", "phone", "email", "activity_type"] as const;
+        if (required.some(field => !values[field]?.trim())) {
+          setFormError("Для смены юридического статуса заполните ФИО, ИНН, телефон, e-mail и вид деятельности.");
+          return;
+        }
+        if (values.business_type !== "LLC" && card.business_type === "LLC" && !values.identity) {
+          setFormError("Для перехода с ООО на ИП или самозанятость заполните паспортные данные.");
+          return;
+        }
+      }
       if (!Object.keys(body).length) {
         setFormError("Нет изменённых непустых полей. API не поддерживает очистку значений.");
         return;
       }
       await onPartnerSave(body);
     } catch (e) {
-      setFormError(e instanceof ApiError ? e.message : "Не удалось сохранить");
+      setFormError(e instanceof ApiError ? e : "Не удалось сохранить");
     }
   });
 
   const saveRequisites = requisitesForm.handleSubmit(async (values) => {
+    if (bankProcessing) return;
     setFormError(null);
     try {
       const body = buildBusinessPatch(values, requisitesForm.formState.dirtyFields);
@@ -537,62 +607,114 @@ export function DocumentReviewDialog({
       }
       await onRequisitesSave(body);
     } catch (e) {
-      setFormError(e instanceof ApiError ? e.message : "Не удалось сохранить");
+      setFormError(e instanceof ApiError ? e : "Не удалось сохранить");
     }
   });
 
   const completeReview = async () => {
+    if (!card || bankProcessing || documentReviewCompleteBlockReason(card.status, card.documents)) return;
     setFormError(null);
     setCompleting(true);
     try {
       await onCompleteReview();
     } catch (e) {
       setFormError(
-        e instanceof ApiError ? e.message : "Не удалось завершить проверку",
+        e instanceof ApiError ? e : "Не удалось завершить проверку",
       );
     } finally {
       setCompleting(false);
     }
   };
 
-  const attachFiles = async (files: FileList | null) => {
-    if (!files?.length) return;
+  const uploadDocumentFile = async (file: File, generation: number) => {
+    const id = await uploadFile(file, "DOCUMENT");
+    for (let attempt = 0; attempt < 30; attempt++) {
+      if (generation !== uploadGeneration.current) throw new Error("Загрузка отменена. Выберите файл снова.");
+      const status = await getFileStatus(id);
+      if (status.status === "UPLOADED") return id;
+      if (status.status !== "PENDING") throw new Error("Не удалось обработать файл");
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    throw new Error("Обработка файла заняла слишком много времени. Файл не сохранён.");
+  };
+
+  const attachFiles = async () => {
+    if (!uploadSelection.length || hasUploads || !card || bankProcessing || uploadConflict) return;
+    if (uploadType === "ADDITIONAL" && uploadSelection.length > 20) {
+      setFormError("За один раз можно добавить не больше 20 дополнительных файлов.");
+      return;
+    }
+    if (uploadType !== "ADDITIONAL" && uploadSelection.length !== 1) {
+      setFormError("Для выбранного типа укажите один файл. Несколько страниц объедините в PDF.");
+      return;
+    }
+    const generation = uploadGeneration.current;
     setUploading(true);
     setFormError(null);
     try {
       const ids: number[] = [];
-      for (const file of Array.from(files)) {
-        const id = await uploadFile(file, "DOCUMENT");
-        let ready = false;
-        for (let attempt = 0; attempt < 30; attempt++) {
-          const status = await getFileStatus(id);
-          if (status.status === "UPLOADED") { ready = true; break; }
-          if (status.status !== "PENDING") throw new Error("Не удалось обработать файл");
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-        }
-        if (!ready) throw new Error("Обработка файла заняла слишком много времени. Файл не прикреплён.");
-        ids.push(id);
-      }
-      await onAttachFiles(ids);
+      for (const file of uploadSelection) ids.push(await uploadDocumentFile(file, generation));
+      if (generation !== uploadGeneration.current) return;
+      setDocumentSaving(true);
+      if (uploadType === "ADDITIONAL") await onAttachFiles(ids);
+      else await onPutDocument(uploadType, ids[0], uploadRevision);
+      setUploadOpen(false);
+      setUploadSelection([]);
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Не удалось прикрепить файлы");
+      if (generation !== uploadGeneration.current) return;
+      if (e instanceof ApiError && e.status === 409) setUploadConflict(true);
+      setFormError(e instanceof ApiError ? e : e instanceof Error ? e.message : "Не удалось прикрепить файлы");
     } finally {
-      setUploading(false);
+      if (generation === uploadGeneration.current) { setUploading(false); setDocumentSaving(false); }
     }
   };
 
+  const stageTypeDocument = async (type: RegistrationDocumentType, file: File | undefined) => {
+    if (!file || uploading || typeUploads[type] || !card || bankProcessing) return;
+    const generation = uploadGeneration.current;
+    setTypeUploads(current => ({ ...current, [type]: file.name }));
+    setTypeDrafts(current => {
+      const next = { ...current };
+      delete next[type];
+      return next;
+    });
+    setFormError(null);
+    try {
+      const fileId = await uploadDocumentFile(file, generation);
+      if (generation === uploadGeneration.current) setTypeDrafts(current => ({ ...current, [type]: { fileId, filename: file.name } }));
+    } catch (error) {
+      if (generation === uploadGeneration.current) setFormError(error instanceof Error ? error : "Не удалось загрузить документ");
+    } finally {
+      if (generation === uploadGeneration.current) setTypeUploads(current => {
+        const next = { ...current };
+        delete next[type];
+        return next;
+      });
+    }
+  };
+
+  const openDocumentUpload = (type: RegistrationDocumentType | "ADDITIONAL" = "ADDITIONAL") => {
+    setUploadType(type);
+    setUploadRevision(type === "ADDITIONAL" ? 0 : card?.documents.find(doc => doc.document_type === type)?.revision ?? 0);
+    setUploadSelection([]);
+    setUploadConflict(false);
+    setUploadOpen(true);
+  };
+
   const verifyBank = async () => {
+    if (!card || card.status !== "DOCUMENTS_VERIFIED" || hasUploads || bankPending || bankProcessing || partnerForm.formState.isSubmitting) return;
     setBankPending(true);
     setFormError(null);
-    setBankMessage(null);
+    setBankAlreadyCurrent(false);
     try {
       const action = await onBankVerification();
-      setBankMessage(action === "QUEUED" ? "Проверка банка поставлена в очередь" : "Подтверждённые банком данные актуальны");
+      setBankAlreadyCurrent(action === "ALREADY_CURRENT");
     } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Не удалось запросить проверку банка");
+      setFormError(e instanceof Error ? e : "Не удалось запросить проверку банка");
     } finally { setBankPending(false); }
   };
 
+  const completeBlockedReason = card ? documentReviewCompleteBlockReason(card.status, card.documents) : null;
   const previewDoc =
     previewId != null
       ? card?.documents.find((d) => d.file_id === previewId) ?? null
@@ -601,6 +723,72 @@ export function DocumentReviewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <ModalShell className="document-review max-w-[760px] [&>*]:shrink-0 [&_input]:border-grey-1 [&_input]:text-sm [&_textarea]:border-grey-1 [&_textarea]:text-sm [&_label>span:first-child]:text-xs [&_label>span:first-child]:text-ink">
+        <ErrorPopup error={formError} onDismiss={() => setFormError(null)} />
+        <Dialog open={uploadOpen} onOpenChange={next => {
+          if (!next && documentSaving) return;
+          if (!next) { uploadGeneration.current++; setUploading(false); setUploadSelection([]); }
+          setUploadOpen(next);
+        }}>
+          <ModalShell className="sm:max-w-[560px]">
+            <DialogTitle className="text-xl font-semibold">{uploadRevision > 0 && uploadType !== "ADDITIONAL" ? "Заменить документ" : "Добавить документ"}</DialogTitle>
+            <label className="flex flex-col gap-2 text-sm">Тип документа
+              <Select value={uploadType} disabled={uploading} onValueChange={value => {
+                if (!(value in DOCUMENT_TYPE_LABELS)) return;
+                const next = value as RegistrationDocumentType | "ADDITIONAL";
+                setUploadType(next); setUploadSelection([]); setUploadConflict(false);
+                setUploadRevision(next === "ADDITIONAL" ? 0 : card?.documents.find(doc => doc.document_type === next)?.revision ?? 0);
+              }}>
+                <SelectTrigger aria-label="Тип документа"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ADDITIONAL">Дополнительный документ</SelectItem>
+                  {currentRequirements.data?.required_documents.map(item => <SelectItem key={item.document_type} value={item.document_type}>{item.title}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </label>
+            {currentRequirements.isError && <button type="button" onClick={() => currentRequirements.refetch()} className="self-start text-sm text-brand underline">Повторить загрузку типов документов</button>}
+            <p className="text-sm text-ink-muted">{uploadType === "ADDITIONAL" ? "Дополнительные файлы прикрепляются отдельно и не заменяют паспорт или другие обязательные документы." : uploadRevision > 0 ? `Новый файл заменит текущую версию ${uploadRevision}. Предыдущая версия сохранится в истории. Потребуется повторная проверка.` : "Будет добавлен новый документ выбранного типа. После загрузки его нужно проверить."}</p>
+            <label className="flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-dashed border-brand p-4 text-sm text-brand">
+              Выбрать {uploadType === "ADDITIONAL" ? "файлы" : "файл"}
+              <input key={uploadType} aria-label="Файл документа" type="file" accept="application/pdf,image/*" multiple={uploadType === "ADDITIONAL"} disabled={uploading || uploadConflict} className="sr-only" onChange={event => { setUploadSelection(Array.from(event.target.files ?? [])); }} />
+            </label>
+            {uploadSelection.map((file, index) => <p key={index} className="break-all text-sm text-ink">{file.name}</p>)}
+            {uploadType !== "ADDITIONAL" && <p className="text-xs text-ink-muted">Один актуальный файл на тип. Несколько страниц объедините в один PDF.</p>}
+            {uploadConflict && <button type="button" className="min-h-11 text-sm text-brand underline" onClick={async () => {
+              try { await onReloadCard(); setUploadOpen(false); setUploadSelection([]); setUploadConflict(false); }
+              catch (error) { setFormError(error instanceof Error ? error : "Не удалось обновить карточку"); }
+            }}>Обновить карточку</button>}
+            <div className="flex flex-wrap gap-3">
+              <DialogClose disabled={documentSaving} className={FOOTER_SECONDARY}>Отмена</DialogClose>
+              <button type="button" className={FOOTER_PRIMARY} onClick={() => void attachFiles()} disabled={!uploadSelection.length || uploading || uploadConflict || bankProcessing}>{documentSaving ? "Сохранение…" : uploading ? "Загрузка и обработка…" : uploadType !== "ADDITIONAL" && uploadRevision > 0 ? "Заменить" : "Добавить"}</button>
+            </div>
+          </ModalShell>
+        </Dialog>
+        <Dialog open={historyType !== null} onOpenChange={next => { if (!next) { setHistoryType(null); setHistoryPreview(null); } }}>
+          <ModalShell className="sm:max-w-[760px]">
+            <DialogTitle className="text-xl font-semibold">История версий</DialogTitle>
+            {historyPreview && card ? <DocPreview key={historyPreview.file_id} doc={historyPreview} applicationStatus={card.status} readOnly onDecision={async () => {}} onBack={() => setHistoryPreview(null)} /> : <>
+              <Select value={historyType ?? "PASSPORT_MAIN"} onValueChange={value => {
+                if (!(value in DOCUMENT_TYPE_LABELS) || value === "ADDITIONAL") return;
+                setHistoryType(value as RegistrationDocumentType); setHistoryOffset(0);
+              }}>
+                <SelectTrigger aria-label="Тип документа в истории"><SelectValue /></SelectTrigger>
+                <SelectContent>{Object.entries(DOCUMENT_TYPE_LABELS).filter(([type]) => type !== "ADDITIONAL").map(([type, label]) => <SelectItem key={type} value={type}>{label}</SelectItem>)}</SelectContent>
+              </Select>
+              <p className="text-xs text-ink-muted">История доступна только для просмотра. Решения принимаются по актуальному файлу во вкладке «Документы».</p>
+              {history.isFetching ? <p className="text-sm text-ink-muted">Загрузка версий…</p> : history.isError ? <button type="button" onClick={() => history.refetch()} className="text-sm text-brand underline">Повторить загрузку истории</button> : history.data?.items.length === 0 ? <p className="text-sm text-ink-muted">Версий пока нет.</p> : history.data?.items.map(version => <div key={`${version.document_type}:${version.revision}`} className="flex min-w-0 flex-col gap-2 rounded-xl border border-grey-4 p-3">
+                <p className="text-xs text-ink-muted">Версия {version.revision}{version.is_current ? " · Актуальная" : " · Предыдущая"} · {DOC_STATUS_META[version.status].label}</p>
+                <button type="button" className="break-all text-left text-sm text-brand underline" onClick={() => setHistoryPreview(version)}>{version.filename}</button>
+                {version.comment && <p className="text-sm text-ink-muted">{version.comment}</p>}
+              </div>)}
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <button type="button" disabled={historyOffset === 0 || history.isFetching} className="min-h-11 text-brand disabled:opacity-40" onClick={() => setHistoryOffset(offset => Math.max(0, offset - 20))}>Предыдущие</button>
+                <span className="text-ink-muted">{history.data?.total ? historyOffset + 1 : 0}–{Math.min(historyOffset + (history.data?.items.length ?? 0), history.data?.total ?? 0)} из {history.data?.total ?? 0}</span>
+                <button type="button" disabled={history.isFetching || !history.data || historyOffset + history.data.items.length >= history.data.total} className="min-h-11 text-brand disabled:opacity-40" onClick={() => setHistoryOffset(offset => offset + 20)}>Следующие</button>
+              </div>
+            </>}
+            <DialogClose className={FOOTER_SECONDARY}>Закрыть</DialogClose>
+          </ModalShell>
+        </Dialog>
         {/* Шапка */}
         <div className="flex w-full items-start justify-between gap-4">
           <div className="flex min-w-0 flex-col items-start gap-3 sm:flex-row sm:gap-[13px]">
@@ -619,11 +807,15 @@ export function DocumentReviewDialog({
               <div className="flex flex-wrap items-center gap-2">
                 <HeaderChip label={review.legalLabel} cls={review.legalCls} />
                 <HeaderChip label={review.statusLabel} cls={review.statusCls} />
-                {card && <div className={cn("inline-flex min-h-[26px] items-center gap-2 text-sm", BUSINESS_BANK_META[card.bank_status].className)}>
+                {card && <div className={cn("inline-flex min-h-[26px] items-center gap-2 text-sm", bankStatusMeta.className)}>
                   <span className="size-1 shrink-0 rounded-full bg-current" />
-                  <span>{BUSINESS_BANK_META[card.bank_status].label}</span>
-                  <button type="button" aria-label="Отправить на проверку банка" title="Отправить на проверку банка" onClick={verifyBank} disabled={bankPending || card.bank_status === "UNDER_REVIEW"} className="flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-grey-5 disabled:opacity-40">
-                    <img src={documentBankRefresh} alt="" className={bankPending ? "animate-spin" : undefined} />
+                  {card.bank_error_code && (card.bank_status === "NOT_VERIFIED" || card.bank_status === "TECHNICAL_ERROR") ? (
+                    <button type="button" className="text-left underline underline-offset-2" onClick={() => useErrorPopupStore.getState().show({ code: card.bank_error_code }, "Проверка банком не завершена")}>
+                      {bankStatusMeta.label}
+                    </button>
+                  ) : <span>{bankStatusMeta.label}</span>}
+                  <button type="button" aria-label="Отправить на проверку банка" title={card.status !== "DOCUMENTS_VERIFIED" ? "Сначала завершите проверку документов" : migrationLocked ? "Дождитесь завершения переноса остатка или ручной сверки" : "Отправить на проверку банка"} onClick={verifyBank} disabled={card.status !== "DOCUMENTS_VERIFIED" || hasUploads || partnerForm.formState.isSubmitting || bankPending || bankProcessing} className="flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-grey-5 disabled:opacity-40">
+                    <img src={documentBankRefresh} alt="" className={bankPending || bankQueued ? "animate-spin" : undefined} />
                   </button>
                 </div>}
               </div>
@@ -639,24 +831,35 @@ export function DocumentReviewDialog({
 
         <div className="h-px w-full bg-grey-2" />
         {bankMessage && <p role="status" className="text-sm text-ink">{bankMessage}</p>}
-        {card?.bank_error_code && <p className="text-xs text-danger">Код ошибки банка: {card.bank_error_code}</p>}
 
         {loading ? (
           <p className="py-10 text-center text-base text-ink-muted">
             Загрузка заявки…
           </p>
         ) : error || !card ? (
-          <p className="py-10 text-center text-base text-danger">
-            Не удалось загрузить заявку.
-          </p>
+          <span className="text-sm text-ink-muted">Данные не загружены.</span>
         ) : previewDoc ? (
           <DocPreview
             doc={previewDoc}
+            applicationStatus={card.status}
             onBack={() => setPreviewId(null)}
             onDecision={(body) => onDocumentDecision(previewDoc.file_id, body)}
           />
         ) : (
           <>
+            <section aria-label="Баланс Felmee" className="flex flex-col gap-3 rounded-xl border border-grey-4 p-4">
+              <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="min-w-0"><dt className="text-xs text-ink-muted">Доступный остаток Felmee</dt><dd className="mt-1 break-words text-xl font-semibold tabular-nums text-ink">{formatRubles(card.available_rub)}</dd></div>
+                <div className="min-w-0"><dt className="text-xs text-ink-muted">Зарезервированный остаток Felmee</dt><dd className="mt-1 break-words text-xl font-semibold tabular-nums text-ink">{formatRubles(card.blocked_rub)}</dd></div>
+              </dl>
+            </section>
+            {card.balance_transfer_status && <section aria-label="Перенос остатка" className="flex min-w-0 flex-col gap-2 rounded-xl border border-grey-4 p-4">
+              <p role="status" className={cn("text-sm font-semibold", transferMeta?.className ?? "text-warning")}>{transferMeta?.label ?? "Не удалось определить состояние переноса"}</p>
+              <p className="text-sm text-ink-muted">{transferMeta?.description ?? "Обновите карточку, чтобы проверить состояние переноса остатка."}</p>
+              {card.balance_transfer_status === "PENDING" && card.status !== "DOCUMENTS_VERIFIED" && <p className="text-sm text-ink-muted">Завершите проверку необходимых документов, затем отправьте заявку на проверку банка.</p>}
+              {card.balance_transfer_status === "DONE" && <p className="text-sm text-ink">{confirmed ? "Новый получатель подтверждён банком. Перенос остатка завершён." : "Ожидаем окончательного подтверждения нового получателя банком."}</p>}
+              {card.balance_transfer_status === "REVIEW_REQUIRED" && <p className="break-all rounded-lg bg-grey-5 p-3 text-xs text-ink">Код причины: <code>{card.bank_error_code ?? "Сервер не передал код причины"}</code></p>}
+            </section>}
             <SegmentTabs
               variant="flat"
               className="w-full [&>button]:flex-1 [&>button]:px-3"
@@ -667,6 +870,7 @@ export function DocumentReviewDialog({
 
             {tab === "partner" && (
               <form onSubmit={savePartner} className="flex flex-col gap-6">
+                <fieldset className="contents" disabled={partnerForm.formState.isSubmitting || bankProcessing}>
                 <SectionTitle>Основная информация</SectionTitle>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field
@@ -698,7 +902,21 @@ export function DocumentReviewDialog({
                     <span className="text-sm leading-[1.3] text-ink-muted">
                       Юридический статус
                     </span>
-                    <Select value={partnerForm.watch("business_type")} disabled>
+                    <Select value={selectedBusinessType} disabled={hasUploads || partnerForm.formState.isSubmitting || bankProcessing}
+                      onValueChange={(value) => {
+                        if (!BUSINESS_TYPE_OPTIONS.some(option => option.value === value)) return;
+                        const nextType = value as PartnerForm["business_type"];
+                        partnerForm.setValue("business_type", nextType, { shouldDirty: true, shouldValidate: true });
+                        uploadGeneration.current++;
+                        setTypeDrafts({});
+                        setTypeUploads({});
+                        setFormError(null);
+                        if (nextType === "LLC") {
+                          partnerForm.unregister("identity");
+                        } else {
+                          if (!partnerForm.getValues("identity") && card.partner.identity) partnerForm.setValue("identity", card.partner.identity);
+                        }
+                      }}>
                       <SelectTrigger aria-label="Юридический статус" className="border-grey-1 text-sm"><SelectValue /></SelectTrigger>
                       <SelectContent>
                       {BUSINESS_TYPE_OPTIONS.map((o) => (
@@ -711,15 +929,32 @@ export function DocumentReviewDialog({
                   </label>
                 </div>
 
-                <p className="text-sm text-ink-muted">Изменение юридического статуса пока недоступно: для этого нужны документы владельца по новому статусу.</p>
-                {card.business_type !== "LLC" && !editingIdentity && (
-                  <button type="button" onClick={() => setEditingIdentity(true)} className="w-fit text-sm text-brand underline">
-                    Добавить паспортные данные
-                  </button>
-                )}
-                {editingIdentity && card.business_type !== "LLC" && (
+                {selectedBusinessType !== card.business_type && <p className="text-sm text-ink-muted">Для смены статуса текущие документы должны быть проверены. Для нового статуса могут потребоваться дополнительные документы владельца.</p>}
+                {changingType && <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-grey-4 p-4">
+                  <SectionTitle>Документы для нового статуса</SectionTitle>
+                  {requirements.isPending ? <p className="text-sm text-ink-muted">Проверяем комплект документов…</p> : requirements.isError ? (
+                    <button type="button" onClick={() => requirements.refetch()} className="self-start text-sm text-brand underline">Повторить загрузку требований</button>
+                  ) : requirements.data?.required_documents.map(item => (
+                    <div key={item.document_type} className="flex min-w-0 flex-col gap-2 rounded-lg bg-grey-5 p-3">
+                      <p className="text-sm font-medium">{item.title}</p>
+                      {!item.needs_upload ? <span className="text-xs text-success">Проверенный документ уже есть</span> : <>
+                        <span className="break-all text-xs text-ink-muted">{typeUploads[item.document_type] ?? typeDrafts[item.document_type]?.filename ?? "Требуется новый файл"}</span>
+                        <label className={cn("flex min-h-11 items-center text-sm text-brand underline", typeUploads[item.document_type] ? "opacity-50" : "cursor-pointer")}>
+                          {typeUploads[item.document_type] ? "Загрузка и обработка…" : typeDrafts[item.document_type] ? "Выбрать другой файл" : "Загрузить документ"}
+                          <input aria-label={`Документ: ${item.title}`} type="file" accept="application/pdf,image/*" className="sr-only" disabled={Boolean(typeUploads[item.document_type])} onChange={event => {
+                            void stageTypeDocument(item.document_type, event.target.files?.[0]); event.target.value = "";
+                          }} />
+                        </label>
+                      </>}
+                    </div>
+                  ))}
+                  <p className="text-xs text-ink-muted">По одному файлу на тип. Несколько страниц объедините в один PDF. Новые документы сохранятся вместе с юридическим статусом и потребуют проверки.</p>
+                </div>}
+                {selectedBusinessType !== "LLC" && (
                   <>
                     <SectionTitle>Паспортные данные</SectionTitle>
+                    <p className="text-sm text-ink-muted">Для ИП и самозанятого заполните все паспортные данные перед сохранением.</p>
+                    {partnerForm.formState.errors.identity?.message && <p role="alert" className="text-sm text-danger">{partnerForm.formState.errors.identity.message}</p>}
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {([
                         ["registration_address", "Адрес регистрации", "text"],
@@ -745,7 +980,8 @@ export function DocumentReviewDialog({
                   rows={5}
                   {...partnerForm.register("comment")}
                 />
-                {formError && <p className="text-sm text-danger">{formError}</p>}
+                </fieldset>
+                {bankProcessing && <p role="status" className="text-sm text-ink-muted">Данные проверяются банком. Изменить их можно после завершения проверки.</p>}
 
                 <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                   <DialogClose className={FOOTER_SECONDARY}>
@@ -753,7 +989,7 @@ export function DocumentReviewDialog({
                   </DialogClose>
                   <button
                     type="submit"
-                    disabled={partnerForm.formState.isSubmitting || !partnerForm.formState.isDirty}
+                    disabled={hasUploads || !typeFilesComplete || changingType && card.status !== "DOCUMENTS_VERIFIED" || partnerForm.formState.isSubmitting || !partnerForm.formState.isDirty || bankProcessing}
                     className={FOOTER_PRIMARY}
                   >
                     {partnerForm.formState.isSubmitting
@@ -768,14 +1004,10 @@ export function DocumentReviewDialog({
               <div className="flex flex-col gap-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                 <SectionTitle>Загруженные документы</SectionTitle>
-                <label className="flex min-h-11 cursor-pointer items-center gap-1 text-sm text-brand">
-                  <Plus className="size-4" />{uploading ? "Загрузка файлов…" : "Добавить документ"}
-                  <input aria-label="Добавить документы" className="sr-only" type="file" multiple disabled={uploading} onChange={(event) => {
-                    void attachFiles(event.target.files);
-                    event.target.value = "";
-                  }} />
-                </label>
+                <button type="button" onClick={() => openDocumentUpload()} disabled={hasUploads || bankProcessing} className="flex min-h-11 items-center gap-1 text-sm text-brand disabled:opacity-50"><Plus className="size-4" />Добавить документ</button>
                 </div>
+                <button type="button" className="self-start text-sm text-brand underline" onClick={() => { setHistoryOffset(0); setHistoryType("PASSPORT_MAIN"); setHistoryPreview(null); }}>История документов</button>
+                {bankProcessing && <p className="text-sm text-ink-muted">Изменение документов доступно после завершения проверки банком.</p>}
                 {card.documents.length === 0 ? (
                   <p className="text-sm text-ink-muted">
                     Документы ещё не загружены.
@@ -783,16 +1015,18 @@ export function DocumentReviewDialog({
                 ) : (
                   <div className="flex flex-col gap-4">
                     {card.documents.map((doc) => (
-                      <DocRow
-                        key={doc.file_id}
-                        doc={doc}
-                        onView={() => setPreviewId(doc.file_id)}
-                      />
+                      <div key={doc.file_id} className="flex min-w-0 flex-col gap-1">
+                        <DocRow doc={doc} onView={() => setPreviewId(doc.file_id)} />
+                        {doc.document_type && doc.document_type !== "ADDITIONAL" && <div className="flex flex-wrap gap-4">
+                          <button type="button" onClick={() => openDocumentUpload(doc.document_type as RegistrationDocumentType)} disabled={hasUploads || bankProcessing} className="min-h-11 text-sm text-brand underline disabled:opacity-50">Заменить</button>
+                          <button type="button" onClick={() => { setHistoryType(doc.document_type as RegistrationDocumentType); setHistoryOffset(0); setHistoryPreview(null); }} className="min-h-11 text-sm text-brand underline">История версий</button>
+                        </div>}
+                      </div>
                     ))}
                   </div>
                 )}
 
-                {formError && <p className="text-sm text-danger">{formError}</p>}
+                {completeBlockedReason && <p role="status" className="text-sm text-ink-muted">{completeBlockedReason}</p>}
 
                 <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                   <DialogClose className={FOOTER_SECONDARY}>
@@ -801,7 +1035,7 @@ export function DocumentReviewDialog({
                   <button
                     type="button"
                     onClick={completeReview}
-                    disabled={completing || uploading || card.documents.length === 0 || card.documents.some(doc => doc.status === "PENDING" && !doc.draft_decision)}
+                    disabled={completing || hasUploads || bankProcessing || Boolean(completeBlockedReason)}
                     className={FOOTER_PRIMARY}
                   >
                     {completing ? "Завершение…" : "Готово"}
@@ -812,6 +1046,7 @@ export function DocumentReviewDialog({
 
             {tab === "requisites" && (
               <form onSubmit={saveRequisites} className="flex flex-col gap-6">
+                <fieldset className="contents" disabled={bankProcessing || requisitesForm.formState.isSubmitting}>
                 <SectionTitle>Банковские реквизиты</SectionTitle>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field
@@ -854,7 +1089,7 @@ export function DocumentReviewDialog({
                   rows={5}
                   {...requisitesForm.register("comment")}
                 />
-                {formError && <p className="text-sm text-danger">{formError}</p>}
+                </fieldset>
 
                 <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                   <DialogClose className={FOOTER_SECONDARY}>
@@ -862,7 +1097,7 @@ export function DocumentReviewDialog({
                   </DialogClose>
                   <button
                     type="submit"
-                    disabled={requisitesForm.formState.isSubmitting || !requisitesForm.formState.isDirty}
+                    disabled={bankProcessing || requisitesForm.formState.isSubmitting || !requisitesForm.formState.isDirty}
                     className={FOOTER_PRIMARY}
                   >
                     {requisitesForm.formState.isSubmitting
@@ -877,7 +1112,7 @@ export function DocumentReviewDialog({
               <div className="flex flex-col gap-6">
                 <SectionTitle>Комментарии</SectionTitle>
                 {commentsError && comments.length === 0 ? (
-                  <div className="text-sm text-danger">Не удалось загрузить комментарии.
+                  <div className="text-sm text-ink-muted">
                     <button type="button" className="ml-3 underline" onClick={onCommentsRetry}>Повторить</button>
                   </div>
                 ) : commentsLoading && comments.length === 0 ? (

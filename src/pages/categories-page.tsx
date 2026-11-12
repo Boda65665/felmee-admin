@@ -106,7 +106,7 @@ export default function CategoriesPage() {
 
   /** Текст ошибки из ApiError, иначе — общий фолбэк. */
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -181,27 +181,13 @@ export default function CategoriesPage() {
     subs: Subcategory[],
   ): Promise<Subcategory[]> => {
     if (!editing) return subs;
-    try {
-      const res = await updateMutation.mutateAsync({
-        categoryId: editing.id,
-        body: { subcategories: buildSubArray(subs) },
-      });
-      return (res?.category?.children ?? [])
-        .filter((c) => c.id != null)
-        .map((c) => ({ key: String(c.id), serverId: c.id, name: c.name ?? "" }));
-    } catch (err) {
-      // Форма откатит список и покажет инлайн-ошибку; дублируем тостом.
-      // 409 — подкатегория занята услугами (как запрет у корневых категорий).
-      if (err instanceof ApiError && err.status === 409) {
-        toast.error(
-          "Нельзя удалить подкатегорию",
-          "Она используется в услугах.",
-        );
-      } else {
-        toast.error("Не удалось сохранить подкатегории", errText(err));
-      }
-      throw err;
-    }
+    const res = await updateMutation.mutateAsync({
+      categoryId: editing.id,
+      body: { subcategories: buildSubArray(subs) },
+    });
+    return (res?.category?.children ?? [])
+      .filter((c) => c.id != null)
+      .map((c) => ({ key: String(c.id), serverId: c.id, name: c.name ?? "" }));
   };
 
   const updateCategory = async (values: CategoryFormValues) => {
@@ -278,8 +264,7 @@ export default function CategoriesPage() {
       {isLoading ? (
         <p className="text-sm text-ink-muted">Загрузка категорий…</p>
       ) : isError ? (
-        <div className="flex items-center gap-3 text-sm text-danger">
-          <span>Не удалось загрузить категории.</span>
+        <div className="flex items-center gap-3 text-sm text-ink-muted">
 
           <button
             type="button"

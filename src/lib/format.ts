@@ -5,3 +5,9 @@ export function formatMillions(value: number): string {
     maximumFractionDigits: 1,
   });
 }
+
+/** Остатки Felmee уже передаются в целых рублях. Отсутствующие суммы не равны нулю. */
+export function formatRubles(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) return "—";
+  return `${value.toLocaleString("ru-RU")} ₽`;
+}

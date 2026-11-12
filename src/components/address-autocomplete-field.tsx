@@ -63,7 +63,7 @@ export function AddressAutocompleteField({
 
   const globalAddresses = useAddressSuggestions(debounced, place === undefined && !disabled);
   const scopedAddresses = usePlaceAddressSuggestions(disabled ? "" : debounced, place);
-  const { data: suggestions = [], isFetching, isError, isSuccess, isPlaceholderData } = place === undefined ? globalAddresses : scopedAddresses;
+  const { data: suggestions = [], isFetching, isSuccess, isPlaceholderData } = place === undefined ? globalAddresses : scopedAddresses;
 
   const showList = !disabled && open && query.trim() === debounced && !isPlaceholderData && suggestions.length > 0;
   const noResults = !disabled && open && Boolean(debounced) && query.trim() === debounced
@@ -171,7 +171,6 @@ export function AddressAutocompleteField({
         </PopoverContent>
       </Popover>
       {open && query.trim() && isFetching && <span role="status" className="text-xs text-ink-muted">Поиск адресов…</span>}
-      {open && query.trim() === debounced && isError && <span role="alert" className="text-xs text-danger">Не удалось загрузить подсказки адреса</span>}
       {noResults ? (
         <span role="status" className="text-xs leading-[1.3] text-ink-muted">Адреса не найдены. Уточните улицу или номер дома.</span>
       ) : error ? (

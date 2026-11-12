@@ -218,8 +218,8 @@ export function CategoryPicker({
           {isLoading ? (
             <p className="px-2 py-2 text-sm text-ink-muted">Загрузка…</p>
           ) : isError ? (
-            <button type="button" onClick={() => void refetch()} className="px-2 py-2 text-sm text-danger">
-              Не удалось загрузить категории. Повторить
+            <button type="button" onClick={() => void refetch()} className="px-2 py-2 text-sm text-ink-muted">
+              Повторить загрузку категорий
             </button>
           ) : categories.length === 0 ? (
             <p className="px-2 py-2 text-sm text-ink-muted">Категорий нет</p>

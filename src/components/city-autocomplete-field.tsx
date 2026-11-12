@@ -54,7 +54,7 @@ export function CityAutocompleteField({
 
   const cities = useCitySuggestions(debounced, !onSelect);
   const places = usePlaceSuggestions(debounced, Boolean(onSelect));
-  const { isFetching, isError, isPlaceholderData } = onSelect ? places : cities;
+  const { isFetching, isPlaceholderData } = onSelect ? places : cities;
 
   // Не предлагаем вариант, который уже точно введён.
   const list: PlaceSuggestion[] = onSelect ? places.data ?? [] : (cities.data ?? [])
@@ -164,7 +164,6 @@ export function CityAutocompleteField({
         </PopoverContent>
       </Popover>
       {open && query.trim() && isFetching && <span role="status" className="text-xs text-ink-muted">Поиск городов…</span>}
-      {open && query.trim() === debounced && isError && <span role="alert" className="text-xs text-danger">Не удалось загрузить подсказки города</span>}
       {error && <span className="text-xs leading-[1.3] text-danger">{error}</span>}
     </div>
   );

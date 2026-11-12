@@ -33,7 +33,6 @@ export function InfiniteScrollSentinel({
     <div ref={ref} className="flex min-h-12 items-center justify-center gap-3 py-3 text-sm text-ink-muted" aria-live="polite">
       {isError ? (
         <>
-          <span role="alert">Не удалось загрузить данные.</span>
           <button type="button" onClick={() => onLoadMore()} disabled={isFetching}
             className="rounded-lg border border-grey-4 px-3 py-1 text-ink hover:bg-grey-5 disabled:opacity-60">
             Повторить

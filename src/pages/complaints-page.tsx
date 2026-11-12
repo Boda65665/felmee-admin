@@ -31,7 +31,6 @@ import {
   type ServiceData,
 } from "@/components";
 import {
-  ApiError,
   useComplaint,
   useComplaintsStats,
   useResolveComplaint,
@@ -317,7 +316,7 @@ export default function ComplaintsPage() {
   const profileError = profileTarget?.role === "CLIENT" ? clientQuery.error : providerQuery.error;
   useEffect(() => {
     if (!profileTarget || !profileError) return;
-    toast.error("Не удалось открыть профиль", profileError instanceof ApiError ? profileError.message : "Попробуйте ещё раз.");
+    toast.error("Не удалось открыть профиль", profileError instanceof Error ? profileError : "Попробуйте ещё раз.");
     setProfileTarget(null);
   }, [profileTarget, profileError, toast]);
 
@@ -432,7 +431,7 @@ export default function ComplaintsPage() {
     } catch (err) {
       toast.error(
         "Не удалось вынести решение",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       // Пробрасываем — модалка покажет инлайн-ошибку и останется открытой.
       throw err;
@@ -614,7 +613,7 @@ export default function ComplaintsPage() {
           </p>
         ) : isError && !data ? (
           <div className="flex flex-col items-center gap-3 py-10 text-center">
-            <p className="text-base text-danger">Не удалось загрузить жалобы.</p>
+            <span className="text-sm text-ink-muted">Данные не загружены.</span>
             <button
               type="button"
               onClick={() => refetch()}

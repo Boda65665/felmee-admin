@@ -18,7 +18,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  ApiError,
   useCreateNotification,
   useDeleteNotification,
 
@@ -247,7 +246,7 @@ const NotificationsPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось создать",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -265,7 +264,7 @@ const NotificationsPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось сохранить",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -284,7 +283,7 @@ const NotificationsPage = () => {
     } catch (err) {
       toast.error(
         "Не удалось удалить",
-        err instanceof ApiError ? err.message : "Попробуйте ещё раз.",
+        err instanceof Error ? err : "Попробуйте ещё раз.",
       );
       throw err;
     }
@@ -422,9 +421,7 @@ const NotificationsPage = () => {
             </p>
           ) : isError && !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-base text-danger">
-                Не удалось загрузить уведомления.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
               <button
                 type="button"
                 onClick={() => refetch()}

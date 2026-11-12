@@ -3541,6 +3541,8 @@ export interface paths {
          * Получить список заявок Business Registry
          * @description Возвращает заявки из реферальных профилей (`source=REFERRAL`) или обычных бизнес-профилей
          *     (`source=BUSINESS`). По умолчанию сортирует по дате подачи от новых к старым.
+         *     Каждый элемент `data.items` содержит `status` проверки документов и отдельный
+         *     `bank_status` проверки банка, как в карточке заявки.
          */
         get: {
             parameters: {
@@ -3549,6 +3551,8 @@ export interface paths {
                     business_type?: "SE" | "IE" | "LLC";
                     /** @description Повторяемый параметр или значения через запятую. */
                     statuses?: ("NEW_APPLICATION" | "NEEDS_CLARIFICATION" | "DOCUMENTS_VERIFIED")[];
+                    /** @description Статус регистрации в банке. VERIFIED — регистрация пройдена; NOT_SENT — проверка ещё не отправлена. */
+                    bank_status?: "NOT_SENT" | "UNDER_REVIEW" | "VERIFIED" | "NOT_VERIFIED" | "TECHNICAL_ERROR";
                     /** @description Включительная нижняя граница даты подачи. Год от 0001 до 9999. */
                     submitted_from?: string;
                     /** @description Включительная верхняя граница даты подачи. Год от 0001 до 9999. */
@@ -3587,6 +3591,7 @@ export interface paths {
                          *               "phone": "+79990000000"
                          *             },
                          *             "status": "NEW_APPLICATION",
+                         *             "bank_status": "NOT_SENT",
                          *             "submitted_at": "2026-10-28T12:00:00Z"
                          *           }
                          *         ],
@@ -3628,6 +3633,10 @@ export interface paths {
          *     `status` описывает проверку Felmee, `bank_status` — отдельную проверку банка.
          *     Первый переход к отправке в банк запускается автоматически после одобрения документов.
          *     `VERIFIED` означает, что бенефициар и тестовый договор оферты подтверждены API банка.
+         *     После смены типа или ИНН `VERIFIED` выставляется только после подтверждённого
+         *     переноса доступного остатка на виртуальный счёт нового бенефициара.
+         *     `available_rub` и `blocked_rub` — внутренний баланс Felmee; во время переноса
+         *     карточка показывает остаток старого бенефициара, после завершения — нового.
          */
         get: {
             parameters: {
@@ -3681,6 +3690,10 @@ export interface paths {
          * @description Без тела запроса. После первого одобрения документов отправка планируется автоматически.
          *     После правок администратор запускает отправку этой кнопкой. Сервер сравнивает данные
          *     бенефициара с последней подтверждённой версией. Реквизиты выплат не входят в сравнение.
+         *     Для юрлиц используется `create_beneficiary` v3. При смене типа или ИНН с
+         *     положительным доступным балансом после подтверждения нового бенефициара
+         *     средства переносятся через `transfer_between_virtual_accounts_v2` с `ext_key`.
+         *     Пока перевод не подтверждён, `bank_status` остаётся UNDER_REVIEW.
          *     Если подтверждённая версия актуальна, возвращает ALREADY_CURRENT без запроса в банк.
          *     При TECHNICAL_ERROR можно повторить без правок; после NOT_VERIFIED данные надо исправить.
          *     Пока проверка выполняется, повторная отправка запрещена. Поиск продолжает индексироваться сразу.
@@ -3766,6 +3779,9 @@ export interface paths {
          *     `full_name`, `inn`, `phone`, `email` и `activity_type`. Новый ИНН и юридический
          *     статус проверяются во внешнем реестре. Ответ содержит новый `business_entity_id`;
          *     прежние значения `business_type` и `business_entity_id` больше не открывают карточку.
+         *     Положительный `available_rub` не запрещает смену типа или ИНН: после проверки
+         *     нового бенефициара остаток переводится ему автоматически. При `blocked_rub > 0`
+         *     смена типа или ИНН возвращает 409 до завершения зарезервированных операций.
          *     Для СЗ и ИП `identity` заменяет весь набор паспортных текстовых данных и адрес регистрации;
          *     `full_name` при необходимости меняется отдельным полем этого же запроса.
          *     При переходе ООО → ИП или СЗ полный `identity` обязателен: у ООО
@@ -3773,11 +3789,19 @@ export interface paths {
          *     прежние паспортные данные переносятся; `identity` может их заменить.
          *     Для целевого ООО `identity` не принимается.
          *     При смене типа `files` содержит ровно те обязательные документы нового типа,
-         *     которых не было в одобренной заявке. Файлы должны быть загружены владельцем
-         *     с назначением DOCUMENT. Например, для ИП → ООО требуется
+         *     которых не было в одобренной заявке. Файлы должны быть загружены владельцем заявки или текущим администратором
+         *     с назначением DOCUMENT; файлы других администраторов и пользователей запрещены. Например, для ИП → ООО требуется
          *     `files: { LLC_DIRECTOR_APPOINTMENT: 123 }`. Новый документ получает PENDING,
          *     заявка возвращается на проверку документов, а отправка в банк возможна
          *     после одобрения этого документа. Для СЗ ↔ ИП и ООО → ИП `files` обычно не нужны.
+         *     Смена статуса и привязка files атомарны. Дополнительные вложения и история версий
+         *     переносятся в новую карточку; неприменимые типы остаются в истории. Новые документы
+         *     получают следующую revision своего типа. Историческая APPROVED не заменяет одобрение
+         *     актуальной версии. Список требований доступен через GET .../documents/requirements.
+         *
+         *     Готовность прикрепляемых файлов: Новые files, переданные при смене business_type, должны иметь purpose
+         *     DOCUMENT и статус UPLOADED. PENDING и FAILED не принимаются при прикреплении новых файлов. Проверки
+         *     доступа, владельца и прочие ограничения операции сохраняются. Перед отправкой дождитесь успешного ответа POST /api/file/upload.
          */
         patch: {
             parameters: {
@@ -3814,6 +3838,8 @@ export interface paths {
                          *         "business_entity_id": 42,
                          *         "status": "NEW_APPLICATION",
                          *         "bank_status": "NOT_SENT",
+                         *         "available_rub": 0,
+                         *         "blocked_rub": 0,
                          *         "submitted_at": "2026-10-28T12:00:00Z",
                          *         "partner": {
                          *           "name": "Иванов Иван Иванович",
@@ -3839,14 +3865,18 @@ export interface paths {
                          *             "filename": "passport-main.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_MAIN",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 124,
                          *             "filename": "passport-registration.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_REGISTRATION",
+                         *             "revision": 1
                          *           }
                          *         ],
                          *         "requisites": null
@@ -3962,14 +3992,18 @@ export interface paths {
                          *             "filename": "passport-main.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_MAIN",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 124,
                          *             "filename": "passport-registration.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_REGISTRATION",
+                         *             "revision": 1
                          *           }
                          *         ],
                          *         "requisites": {
@@ -4076,14 +4110,18 @@ export interface paths {
                          *             "size_bytes": 100000,
                          *             "status": "PENDING",
                          *             "draft_decision": "REQUEST_REUPLOAD",
-                         *             "draft_comment": "Загрузите чёткий скан"
+                         *             "draft_comment": "Загрузите чёткий скан",
+                         *             "document_type": "PASSPORT_MAIN",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 124,
                          *             "filename": "passport-registration.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_REGISTRATION",
+                         *             "revision": 1
                          *           }
                          *         ],
                          *         "requisites": null
@@ -4119,8 +4157,13 @@ export interface paths {
          *     Загрузка должна быть завершена, файлы должны принадлежать текущему администратору.
          *     Ранее прикреплённый к любой заявке `file_id` нельзя использовать повторно; нарушение даёт 400.
          *     Все переданные файлы добавляются в общий список `documents` карточки со статусом
-         *     `APPROVED`. Статус заявки и решения по документам пользователя не меняются.
+         *     `APPROVED`, document_type `ADDITIONAL`, revision `1`. Статус заявки и решения по документам пользователя не меняются.
+         *     Дополнительные вложения не заменяют обязательные документы; для них используйте PUT .../documents/by-type/{document_type}.
          *     Действие записывается в историю действий администратора с именами файлов.
+         *
+         *     Готовность прикрепляемых файлов: Все file_ids должны иметь purpose DOCUMENT и статус UPLOADED. PENDING
+         *     и FAILED не принимаются при прикреплении новых файлов. Проверки доступа, владельца и прочие
+         *     ограничения операции сохраняются. Перед отправкой дождитесь успешного ответа POST /api/file/upload.
          */
         post: {
             parameters: {
@@ -4191,21 +4234,27 @@ export interface paths {
                          *             "filename": "passport-main.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_MAIN",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 124,
                          *             "filename": "passport-registration.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "PENDING"
+                         *             "status": "PENDING",
+                         *             "document_type": "PASSPORT_REGISTRATION",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 456,
                          *             "filename": "additional.pdf",
                          *             "content_type": "application/pdf",
                          *             "size_bytes": 100000,
-                         *             "status": "APPROVED"
+                         *             "status": "APPROVED",
+                         *             "document_type": "ADDITIONAL",
+                         *             "revision": 1
                          *           }
                          *         ],
                          *         "requisites": null
@@ -4298,14 +4347,18 @@ export interface paths {
                          *             "filename": "passport-main.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "REUPLOAD_REQUIRED"
+                         *             "status": "REUPLOAD_REQUIRED",
+                         *             "document_type": "PASSPORT_MAIN",
+                         *             "revision": 1
                          *           },
                          *           {
                          *             "file_id": 124,
                          *             "filename": "passport-registration.jpg",
                          *             "content_type": "image/jpeg",
                          *             "size_bytes": 100000,
-                         *             "status": "APPROVED"
+                         *             "status": "APPROVED",
+                         *             "document_type": "PASSPORT_REGISTRATION",
+                         *             "revision": 1
                          *           }
                          *         ],
                          *         "requisites": null
@@ -26247,6 +26300,187 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/by-type/{document_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Добавить или заменить типизированный документ заявки
+         * @description Файл предварительно загружается через /api/file/upload с purpose DOCUMENT; дождитесь успешного ответа upload.
+         *     Файл должен принадлежать владельцу заявки или текущему администратору. Чужие файлы и файлы,
+         *     уже использованные в документах любой заявки, включая историю и дополнительные вложения, запрещены.
+         *     Тип должен быть применим к текущему профилю. Документы будущего юрстатуса передаются в PATCH partner.
+         *     expected_revision=0 добавляет отсутствующий документ; N>0 заменяет актуальную ревизию N.
+         *     Новая версия сразу получает APPROVED с датой и автором проверки; предыдущая сохраняется. В ответе — обновлённая карточка.
+         *     Устаревшая ревизия даёт 409. Повтор того же запроса не создаёт версию и запись аудита повторно,
+         *     если file_id и результат предыдущей записи всё ещё актуальны.
+         *     Заявка возвращается в NEW_APPLICATION; при оставшихся документах REUPLOAD_REQUIRED сохраняется
+         *     NEEDS_CLARIFICATION. После последней замены закрывается связанное действие о перезагрузке документов.
+         *     Остальные одобренные документы сохраняются. bank_status сбрасывается в NOT_SENT без отправки в банк;
+         *     для новой отправки требуется завершить проверку документов. Пока отправка в банк запланирована
+         *     или выполняется, изменение запрещено (409). Старый файл не удаляется из хранилища.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    source: "REFERRAL" | "BUSINESS";
+                    businessType: "SE" | "IE" | "LLC";
+                    businessEntityId: number;
+                    document_type: components["schemas"]["RegistrationDocumentType"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["BusinessApplicationDocumentPut"];
+                };
+            };
+            responses: {
+                /** @description Успешный результат */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BaseResponse"] & {
+                            data?: components["schemas"]["BusinessApplicationCard"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidBody"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/by-type/{document_type}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Получить версии типизированного документа
+         * @description Версии возвращаются по revision DESC, включая типы, переставшие применяться после смены юрстатуса.
+         *     is_current=true только у актуальной версии применимого типа. История доступна только для чтения;
+         *     решения проверки принимаются только по актуальному file_id. Если версий нет — пустой items.
+         *     Дополнительные вложения ADDITIONAL доступны в карточке и не принимаются как document_type этого пути.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    offset?: number;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    source: "REFERRAL" | "BUSINESS";
+                    businessType: "SE" | "IE" | "LLC";
+                    businessEntityId: number;
+                    document_type: components["schemas"]["RegistrationDocumentType"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Успешный результат */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BaseResponse"] & {
+                            data?: components["schemas"]["BusinessApplicationDocumentHistory"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidBody"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Получить требования к документам текущего или нового юридического статуса
+         * @description Без target_business_type возвращает требования текущего профиля с учётом роли представителя.
+         *     При смене статуса используется существующее правило владельца ИП / генерального директора ООО.
+         *     needs_upload=true означает отсутствие документа; при смене типа — отсутствие актуального
+         *     применимого одобренного документа в исходной заявке. identity_required=true при ООО → ИП/СЗ.
+         *     Сначала получите требования и успешно завершите загрузку недостающих файлов, затем отправьте
+         *     PATCH partner с новым business_type, всеми данными партнёра и files по типам.
+         *     Для BUSINESS недоступны переходы MASTER → LLC и SALON → SE. Внешние реестры и банк здесь не вызываются.
+         *     Это подсказка форме; состояние и комплект повторно проверяются при сохранении.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    target_business_type?: "SE" | "IE" | "LLC";
+                };
+                header?: never;
+                path: {
+                    source: "REFERRAL" | "BUSINESS";
+                    businessType: "SE" | "IE" | "LLC";
+                    businessEntityId: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Успешный результат */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BaseResponse"] & {
+                            data?: components["schemas"]["BusinessApplicationDocumentRequirements"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidBody"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -27151,7 +27385,7 @@ export interface components {
          * @description Машинный код ошибки, который backend возвращает в поле `error_code`.
          * @enum {string}
          */
-        ERROR_CODE: "INVALID_BODY" | "INVALID_DATE" | "invalid_body" | "unauthorized" | "not_found" | "slot_unavailable" | "conflict" | "BUSINESS_INACTIVE" | "INSUFFICIENT_FUNDS" | "REQUISITES_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "REGISTRY_UNAVAILABLE" | "BENEFICIARY_NOT_READY" | "BANK_ACCOUNT_UNAVAILABLE" | "BANK_UNAVAILABLE" | "object_modified_by_another_thread" | "account_deletion_blocked" | "member_deletion_already_scheduled" | "member_deletion_blocked" | "member_already_active" | "member_restore_window_expired" | "member_reactivation_not_allowed" | "action_too_late" | "too_many_request" | "code_is_gone" | "forbidden" | "user_blocked" | "salon_permission_denied" | "geocoding_failed" | "conflicting_geo_filters" | "address_suggestions_failed" | "invalid_captcha" | "invite_code_not_found" | "admin_account_not_found" | "record_not_found" | "record_not_cancelable" | "feed_expired" | "feed_busy" | "internal_error";
+        ERROR_CODE: "INVALID_BODY" | "INVALID_DATE" | "invalid_body" | "unauthorized" | "not_found" | "slot_unavailable" | "conflict" | "BUSINESS_INACTIVE" | "INSUFFICIENT_FUNDS" | "REQUISITES_REQUIRED" | "IDEMPOTENCY_KEY_REUSED" | "REGISTRY_UNAVAILABLE" | "BENEFICIARY_NOT_READY" | "BANK_ACCOUNT_UNAVAILABLE" | "BANK_UNAVAILABLE" | "object_modified_by_another_thread" | "account_deletion_blocked" | "member_deletion_already_scheduled" | "member_deletion_blocked" | "member_already_active" | "member_restore_window_expired" | "member_reactivation_not_allowed" | "action_too_late" | "too_many_request" | "code_is_gone" | "forbidden" | "user_blocked" | "salon_permission_denied" | "geocoding_failed" | "conflicting_geo_filters" | "address_suggestions_failed" | "invalid_captcha" | "invite_code_not_found" | "admin_account_not_found" | "record_not_found" | "record_not_cancelable" | "feed_expired" | "feed_busy" | "file_upload_failed" | "file_upload_timeout" | "internal_error";
         BaseResponse: {
             /** @description Устаревший camelCase-alias поля `error_code`; при ошибке оба поля содержат одинаковое значение. */
             codeError: string | null;
@@ -34448,6 +34682,26 @@ export interface components {
             bank_status: "NOT_SENT" | "UNDER_REVIEW" | "VERIFIED" | "NOT_VERIFIED" | "TECHNICAL_ERROR";
             /** @description Код причины отказа или технической ошибки; отсутствует при остальных статусах. */
             bank_error_code?: string;
+            /**
+             * Format: int64
+             * @description Доступный остаток в Felmee в целых рублях; при переносе показывает старого бенефициара.
+             */
+            available_rub: number;
+            /**
+             * Format: int64
+             * @description Зарезервированный остаток в Felmee в целых рублях.
+             */
+            blocked_rub: number;
+            /**
+             * @description Состояние переноса между бенефициарами; отсутствует, если переноса не было.
+             *     PENDING — ожидание готовности нового бенефициара; READY — сумма и счета зафиксированы;
+             *     TRANSFERRING/PROCESSING — запрос в Точку или ожидание его результата;
+             *     APPLYING — банк подтвердил перевод, Felmee переносит внутренний остаток;
+             *     DONE — перенос завершён; REVIEW_REQUIRED — требуется ручная сверка, автоматический
+             *     повтор перевода не запускается.
+             * @enum {string}
+             */
+            balance_transfer_status?: "PENDING" | "READY" | "TRANSFERRING" | "PROCESSING" | "APPLYING" | "DONE" | "REVIEW_REQUIRED";
             /** Format: date-time */
             submitted_at: string;
             partner: {
@@ -34460,23 +34714,8 @@ export interface components {
                 /** @description ФИО и паспортные данные СЗ или ИП для проверки администратором; для старых заявок null, у ООО отсутствует. */
                 identity?: components["schemas"]["RegistrationIdentity"] | null;
             };
-            documents: {
-                /** Format: int64 */
-                file_id: number;
-                filename: string;
-                content_type: string | null;
-                /** Format: int64 */
-                size_bytes: number | null;
-                /** @enum {string} */
-                status: "PENDING" | "APPROVED" | "REUPLOAD_REQUIRED";
-                /**
-                 * @description Черновое решение администратора до завершения проверки.
-                 * @enum {string}
-                 */
-                draft_decision?: "APPROVE" | "REQUEST_REUPLOAD";
-                /** @description Черновой комментарий к запросу повторной загрузки. */
-                draft_comment?: string;
-            }[];
+            /** @description Актуальные применимые типизированные документы и дополнительные вложения. Предыдущие версии доступны в history. */
+            documents: components["schemas"]["BusinessApplicationDocument"][];
             requisites: components["schemas"]["ReferralRequisites"] | null;
         };
         BusinessApplicationDocumentDecision: {
@@ -34614,6 +34853,95 @@ export interface components {
              * @example 300
              */
             expires_in_seconds: number;
+        };
+        BusinessApplicationDocument: {
+            /** Format: int64 */
+            file_id: number;
+            /**
+             * @description ADDITIONAL — дополнительное вложение; оно не закрывает обязательный тип документа.
+             * @enum {string}
+             */
+            document_type: "PASSPORT_MAIN" | "PASSPORT_REGISTRATION" | "IE_POWER_OF_ATTORNEY" | "LLC_DIRECTOR_APPOINTMENT" | "LLC_MACHINE_READABLE_POWER_OF_ATTORNEY" | "ADDITIONAL";
+            /** @description Версия типизированного документа; у дополнительных вложений 1. */
+            revision: number;
+            filename: string;
+            content_type: string | null;
+            /** Format: int64 */
+            size_bytes: number | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REUPLOAD_REQUIRED";
+            /**
+             * @description Черновое решение до завершения проверки.
+             * @enum {string}
+             */
+            draft_decision?: "APPROVE" | "REQUEST_REUPLOAD";
+            /** @description Черновой комментарий к запросу повторной загрузки. */
+            draft_comment?: string;
+        };
+        BusinessApplicationDocumentPut: {
+            /** Format: int64 */
+            file_id: number;
+            /** @description 0 — добавить отсутствующий документ; N — заменить текущую версию N. */
+            expected_revision: number;
+        };
+        BusinessApplicationDocumentVersion: {
+            /** Format: int64 */
+            file_id: number;
+            document_type: components["schemas"]["RegistrationDocumentType"];
+            revision: number;
+            filename: string;
+            content_type: string | null;
+            /** Format: int64 */
+            size_bytes: number | null;
+            /** @enum {string} */
+            status: "PENDING" | "APPROVED" | "REUPLOAD_REQUIRED";
+            is_current: boolean;
+            comment: string | null;
+            /** Format: date-time */
+            reviewed_at: string | null;
+            /** Format: int64 */
+            reviewed_by: number | null;
+        };
+        BusinessApplicationDocumentHistory: {
+            items: components["schemas"]["BusinessApplicationDocumentVersion"][];
+            total: number;
+            offset: number;
+            limit: number;
+        };
+        /**
+         * @description Имена всех полей ответа и вложенных документов передаются в snake_case.
+         * @example {
+         *       "business_type": "LLC",
+         *       "required_documents": [
+         *         {
+         *           "document_type": "PASSPORT_MAIN",
+         *           "title": "Паспорт (основной разворот с фотографией)",
+         *           "needs_upload": false
+         *         },
+         *         {
+         *           "document_type": "PASSPORT_REGISTRATION",
+         *           "title": "Паспорт (страница с пропиской)",
+         *           "needs_upload": false
+         *         },
+         *         {
+         *           "document_type": "LLC_DIRECTOR_APPOINTMENT",
+         *           "title": "Приказ о вступлении генерального директора в должность",
+         *           "needs_upload": true
+         *         }
+         *       ],
+         *       "identity_required": false
+         *     }
+         */
+        BusinessApplicationDocumentRequirements: {
+            /** @enum {string} */
+            business_type: "SE" | "IE" | "LLC";
+            /** @description Полный identity обязателен при переходе ООО → СЗ/ИП. */
+            identity_required: boolean;
+            required_documents: {
+                document_type: components["schemas"]["RegistrationDocumentType"];
+                title: string;
+                needs_upload: boolean;
+            }[];
         };
     };
     responses: {

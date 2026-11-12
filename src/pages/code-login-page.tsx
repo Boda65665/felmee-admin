@@ -5,6 +5,7 @@ import { ROUTES } from "@/lib/routes";
 import { getPostLoginRoute } from "@/lib/auth";
 import { ApiError, loginByPhone, sendPhoneOtp } from "@/lib/api";
 import { useCooldownStore } from "@/lib/cooldown-store";
+import { useErrorPopupStore } from "@/lib/error-popup-store";
 import { OtpInput, type OtpState } from "@/components/ui";
 
 const CODE_LENGTH = 6;
@@ -28,7 +29,6 @@ export default function CodeLoginPage() {
 
   const [code, setCode] = useState("");
   const [state, setState] = useState<OtpState>("default");
-  const [errorText, setErrorText] = useState("Неверный код, попробуйте еще раз");
   // Старт таймера — реальный TTL с экрана входа (фолбэк, если не пришёл).
   const [seconds, setSeconds] = useState(navState?.ttl || RESEND_SECONDS);
 
@@ -55,15 +55,15 @@ export default function CodeLoginPage() {
       navigate(getPostLoginRoute(), { replace: true });
     } catch (err) {
       setState("error");
+      let message = "Неверный код, попробуйте еще раз";
       if (err instanceof ApiError && err.code === "code_is_gone") {
-        setErrorText("Код истёк — запросите новый");
+        message = "Код истёк — запросите новый";
       } else if (err instanceof ApiError && err.code === "forbidden") {
         // Код верный — бэк его принял, но у аккаунта нет роли ADMIN /
         // прав на админ-панель. Не путаем пользователя «неверным кодом».
-        setErrorText("Нет доступа к админ-панели для этого номера");
-      } else {
-        setErrorText("Неверный код, попробуйте еще раз");
+        message = "Нет доступа к админ-панели для этого номера";
       }
+      useErrorPopupStore.getState().show({ message, code: err instanceof ApiError ? err.code : null }, "Не удалось войти");
     }
   };
 
@@ -74,12 +74,13 @@ export default function CodeLoginPage() {
       const ttl = await sendPhoneOtp(phone!);
       // Таймер — по реальному TTL из ответа (фолбэк, если не пришёл).
       setSeconds(ttl || RESEND_SECONDS);
-    } catch {
+    } catch (error) {
       // Отправка не прошла (напр. 429 — ещё рано): если middleware завёл
       // кулдаун из `data.TTL`, зеркалим его остаток в таймер повторной отправки.
       const until = useCooldownStore.getState().until;
       const remaining = until ? Math.ceil((until - Date.now()) / 1000) : 0;
       if (remaining > 0) setSeconds(remaining);
+      else useErrorPopupStore.getState().show(error, "Не удалось отправить код");
     }
   };
 
@@ -105,9 +106,6 @@ export default function CodeLoginPage() {
           state={state}
           autoFocus
         />
-        {state === "error" && (
-          <p className="text-base leading-[1.25] text-danger">{errorText}</p>
-        )}
       </div>
 
       <p className="text-center text-base leading-[1.3] text-ink">

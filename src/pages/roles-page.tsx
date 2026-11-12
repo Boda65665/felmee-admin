@@ -13,7 +13,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  ApiError,
   useEmployees,
   useEmployee,
   useCreateEmployee,
@@ -142,7 +141,7 @@ const RolesPage = () => {
 
   /** Текст ошибки из ApiError, иначе — общий фолбэк. */
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   const { data, isLoading, isError, refetch, isFetching } = useEmployees();
 
@@ -282,8 +281,7 @@ const RolesPage = () => {
       {isLoading ? (
         <p className="text-sm text-ink-muted">Загрузка сотрудников…</p>
       ) : isError ? (
-        <div className="flex items-center gap-3 text-sm text-danger">
-          <span>Не удалось загрузить сотрудников.</span>
+        <div className="flex items-center gap-3 text-sm text-ink-muted">
           <button
             type="button"
             onClick={() => refetch()}
@@ -315,8 +313,7 @@ const RolesPage = () => {
         (permsQuery.isLoading ? (
           <p className="text-sm text-ink-muted">Загрузка прав…</p>
         ) : permsQuery.isError ? (
-          <div className="flex items-center gap-3 text-sm text-danger">
-            <span>Не удалось загрузить права сотрудника.</span>
+          <div className="flex items-center gap-3 text-sm text-ink-muted">
             <button
               type="button"
               onClick={() => permsQuery.refetch()}

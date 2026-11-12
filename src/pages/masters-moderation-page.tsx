@@ -25,7 +25,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  ApiError,
   useCitySuggestions,
 
   useApproveModerationRequest,
@@ -191,7 +190,7 @@ const MastersModerationPage = () => {
 
   /** Текст ошибки из ApiError, иначе — общий фолбэк. */
   const errText = (err: unknown) =>
-    err instanceof ApiError ? err.message : "Попробуйте ещё раз.";
+    err instanceof Error ? err : "Попробуйте ещё раз.";
 
   const handleApprove = async (requestId: number) => {
     setPendingApproveId(requestId);
@@ -404,9 +403,7 @@ const MastersModerationPage = () => {
             </p>
           ) : isError && !data ? (
             <div className="flex flex-col items-center gap-3 py-8 text-center">
-              <p className="text-base text-danger">
-                Не удалось загрузить заявки модерации.
-              </p>
+              <span className="text-sm text-ink-muted">Данные не загружены.</span>
               <button
                 type="button"
                 onClick={() => refetch()}

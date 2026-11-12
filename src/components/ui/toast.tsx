@@ -10,6 +10,7 @@ import {
 import { Check, Info, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { useErrorPopupStore } from "@/lib/error-popup-store";
 
 /** Тип тоста: успех (зелёный), ошибка (красный), инфо (брендовый). */
 export type ToastVariant = "success" | "error" | "info";
@@ -34,7 +35,7 @@ type ToastInput = {
 type ToastApi = {
   toast: (input: ToastInput) => void;
   success: (title: string, description?: string) => void;
-  error: (title: string, description?: string) => void;
+  error: (title: string, description?: unknown) => void;
   info: (title: string, description?: string) => void;
 };
 
@@ -75,6 +76,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const push = useCallback(
     (input: ToastInput) => {
+      if (input.variant === "error") {
+        useErrorPopupStore.getState().show(input.description ?? input.title, input.title);
+        return;
+      }
       const id = (idRef.current += 1);
       setToasts((list) => [
         ...list,
@@ -94,7 +99,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     () => ({
       toast: push,
       success: (title, description) => push({ variant: "success", title, description }),
-      error: (title, description) => push({ variant: "error", title, description }),
+      error: (title, description) => useErrorPopupStore.getState().show(description ?? title, title),
       info: (title, description) => push({ variant: "info", title, description }),
     }),
     [push],

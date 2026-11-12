@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -62,7 +63,7 @@ export function SalonProfileDialog({
   // Правка доступна, когда передан `onSave` (страница мастеров/салонов). Без
   // него (напр. профиль со страницы «Записи») — только просмотр.
   const editing = Boolean(onSave);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | Error | null>(null);
 
   const {
     register,
@@ -146,7 +147,7 @@ export function SalonProfileDialog({
       await onSave(body);
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось сохранить");
+      setError(err instanceof Error ? err : "Не удалось сохранить");
     }
   });
 
@@ -307,9 +308,7 @@ export function SalonProfileDialog({
           </div>
         </SectionCard>
 
-        {error && (
-          <p className="text-sm leading-[1.3] text-danger">{error}</p>
-        )}
+        <ErrorPopup error={error} onDismiss={() => setError(null)} />
 
         {/* Действия */}
         <ModalActions>

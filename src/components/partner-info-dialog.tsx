@@ -151,10 +151,8 @@ export function PartnerInfoDialog({
             Загрузка карточки партнёра…
           </p>
         ) : !card ? (
-          <p className="py-16 text-center text-base text-danger">
-            Не удалось загрузить карточку партнёра.
-            <button type="button" onClick={() => refetch()} disabled={isFetching} className="ml-3 underline">Повторить</button>
-          </p>
+          <div className="py-16 text-center text-base text-ink-muted"><button type="button" onClick={() => refetch()} disabled={isFetching} className="ml-3 underline">Повторить</button>
+          </div>
         ) : (
           <>
             {/* Шапка: аватар, имя/мета, чипы уровней и статуса, крестик */}

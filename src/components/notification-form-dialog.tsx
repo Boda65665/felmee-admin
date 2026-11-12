@@ -1,3 +1,4 @@
+import { ErrorPopup } from "@/components/error-popup";
 import { useState } from "react";
 import { CalendarDays, X } from "lucide-react";
 import { format } from "date-fns";
@@ -239,7 +240,7 @@ export function NotificationFormDialog({
   );
   const [scheduledTime, setScheduledTime] = useState(initial?.scheduledTime ?? "");
   const [dateOpen, setDateOpen] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | Error | null>(null);
 
   const hasInApp = channels.includes("IN_APP");
   const validateSubmission = () => {
@@ -495,7 +496,7 @@ export function NotificationFormDialog({
           </div>
         )}
 
-        {formError && <p role="alert" className="text-sm text-danger">{formError}</p>}
+        <ErrorPopup error={formError} onDismiss={() => setFormError(null)} />
         <button
           type="button"
           onClick={submit}

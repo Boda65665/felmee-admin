@@ -3,10 +3,14 @@ import {
   useMutation,
   useQuery,
   useQueryClient,
+  type Query,
 } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { shouldPollBusinessApplication } from "../business-bank-status";
 
 import { api, unwrap } from "./client";
 import type { components } from "./schema";
+import { parseDocumentRequirements, parseDocumentHistory } from "./document-responses";
 
 /** Страница списка заявок (items + курсор offset/limit + has_more). */
 export type BusinessApplicationPage =
@@ -23,6 +27,9 @@ export type BusinessApplicationCard =
 /** Один загруженный документ в карточке заявки. */
 export type BusinessApplicationDocument =
   BusinessApplicationCard["documents"][number];
+export type RegistrationDocumentType = components["schemas"]["RegistrationDocumentType"];
+export type DocumentRequirements = components["schemas"]["BusinessApplicationDocumentRequirements"];
+export type DocumentHistory = components["schemas"]["BusinessApplicationDocumentHistory"];
 
 /** Страница комментариев к заявке. */
 export type BusinessApplicationCommentsPage =
@@ -57,11 +64,30 @@ export function buildBusinessPatch<T extends Record<string, unknown>>(
   })) as Partial<T>;
 }
 
+/** При смене типа API требует все основные данные, даже если изменён только тип. */
+export function buildBusinessPartnerPatch(
+  values: BusinessApplicationPartnerUpdate,
+  dirty: Partial<Record<keyof BusinessApplicationPartnerUpdate, unknown>>,
+  currentType: BusinessType,
+): BusinessApplicationPartnerUpdate {
+  const body = buildBusinessPatch(values, dirty);
+  if (values.business_type && values.business_type !== currentType) {
+    for (const field of ["full_name", "inn", "phone", "email", "activity_type"] as const) {
+      body[field] = values[field]?.trim() ?? "";
+    }
+    body.business_type = values.business_type;
+    if (values.business_type !== "LLC" && values.identity) body.identity = values.identity;
+  }
+  if (values.business_type === "LLC") delete body.identity;
+  return body;
+}
+
 /** Источник заявки — вкладка раздела (REFERRAL / BUSINESS). */
 export type BusinessApplicationSource = BusinessApplicationListItem["source"];
 
 /** Юридический статус бизнеса (SE — самозанятость, IE — ИП, LLC — ООО). */
 export type BusinessType = BusinessApplicationListItem["business_type"];
+export type BusinessBankStatus = BusinessApplicationCard["bank_status"];
 
 /** Статус проверки заявки (новая / нужно уточнение / проверена). */
 export type BusinessApplicationStatus =
@@ -69,6 +95,25 @@ export type BusinessApplicationStatus =
 
 /** Статус одного загруженного документа. */
 export type BusinessDocumentStatus = BusinessApplicationDocument["status"];
+
+export function documentReviewBlockReason(applicationStatus: BusinessApplicationStatus, documentStatus: BusinessDocumentStatus): string | null {
+  if (applicationStatus === "DOCUMENTS_VERIFIED") return "Проверка заявки завершена. Изменить решение по документам нельзя.";
+  if (applicationStatus === "NEEDS_CLARIFICATION") return "Ожидается повторная загрузка документов. Изменить решение можно после новой подачи.";
+  if (documentStatus === "APPROVED") return "Документ уже подтверждён. Изменить решение нельзя.";
+  if (documentStatus === "REUPLOAD_REQUIRED") return "По этому документу уже запрошена перезагрузка. Дождитесь нового файла.";
+  return null;
+}
+
+export { documentReviewErrorMessage } from "../error-messages";
+
+export function documentReviewCompleteBlockReason(status: BusinessApplicationStatus, documents: BusinessApplicationDocument[]): string | null {
+  if (status !== "NEW_APPLICATION") return documentReviewBlockReason(status, "PENDING");
+  if (documents.length === 0) return "Для проверки пока нет загруженных документов.";
+  if (documents.some(doc => doc.status === "REUPLOAD_REQUIRED")) return "Дождитесь повторной загрузки запрошенных документов.";
+  if (!documents.some(doc => doc.draft_decision)) return "Нет новых решений для отправки. Сначала проверьте документы и выберите решение.";
+  if (documents.some(doc => doc.status === "PENDING" && !doc.draft_decision)) return "Выберите решение по каждому новому документу.";
+  return null;
+}
 
 /** Ключ заявки — тройка, которой она адресуется в API. */
 export interface BusinessApplicationKey {
@@ -83,6 +128,7 @@ export interface BusinessApplicationsListParams {
   source: BusinessApplicationSource;
   /** Фильтр по юр. статусу. */
   business_type?: BusinessType;
+  bank_status?: BusinessBankStatus;
   /** Фильтр по статусам проверки (OR). */
   statuses?: BusinessApplicationStatus[];
   /** Нижняя/верхняя границы даты подачи — `YYYY-MM-DD`. */
@@ -220,6 +266,34 @@ export const addDocumentAttachments = async (
   return unwrap(res)!;
 };
 
+export async function putApplicationDocument(key: BusinessApplicationKey, documentType: RegistrationDocumentType, body: components["schemas"]["BusinessApplicationDocumentPut"]): Promise<BusinessApplicationCard> {
+  return unwrap(await api.PUT("/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/by-type/{document_type}", {
+    params: { path: { ...key, document_type: documentType } }, body,
+  }))!;
+}
+
+export async function getDocumentRequirements(key: BusinessApplicationKey, target?: BusinessType): Promise<DocumentRequirements> {
+  return parseDocumentRequirements(unwrap(await api.GET("/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/requirements", {
+    params: { path: key, query: target ? { target_business_type: target } : {} },
+  })));
+}
+
+export function useDocumentRequirements(key: BusinessApplicationKey | null, target?: BusinessType, enabled = true) {
+  return useQuery({ queryKey: [...businessRegistryKeys.all, "requirements", key, target],
+    queryFn: () => getDocumentRequirements(key!, target), enabled: Boolean(key) && enabled, retry: false });
+}
+
+export async function getDocumentHistory(key: BusinessApplicationKey, documentType: RegistrationDocumentType, offset = 0): Promise<DocumentHistory> {
+  return parseDocumentHistory(unwrap(await api.GET("/api/admin/business-registry/applications/{source}/{businessType}/{businessEntityId}/documents/by-type/{document_type}/history", {
+    params: { path: { ...key, document_type: documentType }, query: { offset, limit: 20 } },
+  })));
+}
+
+export function useDocumentHistory(key: BusinessApplicationKey | null, documentType: RegistrationDocumentType | null, offset: number) {
+  return useQuery({ queryKey: [...businessRegistryKeys.all, "document-history", key, documentType, offset],
+    queryFn: () => getDocumentHistory(key!, documentType!, offset), enabled: Boolean(key && documentType), retry: false });
+}
+
 /**
  * Изменить данные партнёра в заявке (в т.ч. решение по заявке через комментарий).
  * `PATCH …/partner`.
@@ -274,13 +348,27 @@ export const useBusinessApplications = (
     placeholderData: keepPreviousData,
   });
 
-/** Карточка заявки. Запрос не идёт, пока ключ не задан. */
-export const useBusinessApplication = (key: BusinessApplicationKey | null) =>
-  useQuery({
+/** Открытая карточка обновляется, пока заявка ожидает отправки или ответа банка. */
+export const useBusinessApplication = (key: BusinessApplicationKey | null, bankVerificationQueued = false) => {
+  const queryClient = useQueryClient();
+  const query = useQuery({
     queryKey: businessRegistryKeys.detail(key as BusinessApplicationKey),
     queryFn: () => getBusinessApplication(key as BusinessApplicationKey),
     enabled: key != null,
+    refetchInterval: (query) => shouldPollBusinessApplication(query.state.data, bankVerificationQueued) ? 3000 : false,
   });
+  const bankStatus = query.data?.bank_status;
+  const transferStatus = query.data?.balance_transfer_status;
+  useEffect(() => {
+    if (!bankStatus || bankStatus === "NOT_SENT" || bankStatus === "UNDER_REVIEW") return;
+    if (bankStatus === "VERIFIED" && transferStatus && transferStatus !== "DONE" && transferStatus !== "REVIEW_REQUIRED") return;
+    void queryClient.invalidateQueries({
+      queryKey: businessRegistryKeys.all,
+      predicate: ({ queryKey }) => queryKey[1] === "list" || queryKey[1] === "infinite",
+    });
+  }, [bankStatus, transferStatus, queryClient]);
+  return query;
+};
 
 /** Комментарии к заявке. Запрос не идёт, пока ключ не задан. */
 export const useBusinessApplicationComments = (
@@ -304,22 +392,46 @@ const useCardMutation = <V>(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
-    onSuccess: (card) => {
+    onSuccess: async (card, { key }) => {
+      const nextKey: BusinessApplicationKey = {
+        source: card.source,
+        businessType: card.business_type,
+        businessEntityId: card.business_entity_id,
+      };
+      const previousApplicationQueries = {
+        queryKey: businessRegistryKeys.all,
+        predicate: ({ queryKey }: Query) => {
+          const applicationKey = queryKey[2] as BusinessApplicationKey | null | undefined;
+          return applicationKey?.source === key.source &&
+            applicationKey.businessType === key.businessType &&
+            applicationKey.businessEntityId === key.businessEntityId;
+        },
+      };
+      // Ответы начатых до сохранения запросов не должны затирать свежую карточку.
+      await queryClient.cancelQueries(previousApplicationQueries);
+      if (nextKey.source !== key.source || nextKey.businessType !== key.businessType ||
+        nextKey.businessEntityId !== key.businessEntityId) {
+        // После смены ключа прежний адрес заявки уже не существует.
+        queryClient.removeQueries(previousApplicationQueries);
+      }
       // Ключ берём из самой карточки, а не из `vars.key`: при правке
       // `business_type` заявка «переезжает» на новый ключ (part пути), и кэш
       // надо класть под актуальный — иначе модалка после смены типа мигнёт.
       queryClient.setQueryData(
-        businessRegistryKeys.detail({
-          source: card.source,
-          businessType: card.business_type,
-          businessEntityId: card.business_entity_id,
-        }),
+        businessRegistryKeys.detail(nextKey),
         card,
       );
-      queryClient.invalidateQueries({ queryKey: businessRegistryKeys.all });
+      void queryClient.invalidateQueries({
+        queryKey: businessRegistryKeys.all,
+        predicate: ({ queryKey }) => queryKey[1] !== "detail",
+      });
     },
   });
 };
+
+export const usePutApplicationDocument = () => useCardMutation<{ documentType: RegistrationDocumentType; body: components["schemas"]["BusinessApplicationDocumentPut"] }>(
+  ({ key, documentType, body }) => putApplicationDocument(key, documentType, body),
+);
 
 /** Решение по одному файлу. */
 export const useSetDocumentDecision = () =>
@@ -363,6 +475,13 @@ export const useRequestBusinessBankVerification = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: requestBusinessBankVerification,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: businessRegistryKeys.all }),
+    onSuccess: async (result, key) => {
+      const queryKey = businessRegistryKeys.detail(key);
+      await queryClient.cancelQueries({ queryKey, exact: true });
+      queryClient.setQueryData<BusinessApplicationCard>(queryKey, current => current ? {
+        ...current, bank_status: result.bank_status, bank_error_code: undefined,
+      } : current);
+      void queryClient.invalidateQueries({ queryKey: businessRegistryKeys.all });
+    },
   });
 };
