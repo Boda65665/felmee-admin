@@ -1,0 +1,261 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-brand: var(--brand);
+    --color-ink: var(--ink);
+    --color-ink-muted: var(--ink-muted);
+    --color-grey-1: var(--grey-1);
+    --color-grey-2: var(--grey-2);
+    --color-grey-3: var(--grey-3);
+    --color-grey-4: var(--grey-4);
+    --color-grey-5: var(--grey-5);
+    --color-success: var(--success);
+    --color-success-bg: var(--success-bg);
+    --color-success-fg: var(--success-fg);
+    --color-danger: var(--danger);
+    --color-danger-bg: var(--danger-bg);
+    --color-warning: var(--warning);
+    --color-warning-bg: var(--warning-bg);
+    --color-info: var(--info);
+    --color-status-blue: var(--status-blue);
+    --color-status-blue-bg: var(--status-blue-bg);
+    --color-chart-gmv: var(--chart-gmv);
+    --color-chart-rev: var(--chart-rev);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    /* Felmee brand tokens (из Figma) */
+    --brand: oklch(0.628 0.229 297); /* #9c5cfe */
+    --ink: oklch(0.359 0.012 286); /* #3c3c43 — основной текст */
+    --ink-muted: oklch(0.359 0.012 286 / 0.6); /* вторичный текст */
+    --grey-1: oklch(0.752 0.006 286); /* #aeaeb2 — systemGray3 */
+    --grey-2: oklch(0.815 0.005 286); /* #c7c7cc — systemGray4 */
+    --grey-3: oklch(0.855 0.005 286); /* #d1d1d6 — systemGray4 */
+    --grey-4: oklch(0.915 0.004 286); /* #e5e5ea — systemGray5, границы/tertiary */
+    --grey-5: oklch(0.953 0.003 286); /* #f2f2f7 — systemGray6, фон контента */
+    --success: oklch(0.723 0.19 150); /* #34c759 */
+    --success-bg: oklch(0.968 0.028 158); /* #ebfaef — фон зелёного бейджа */
+    --success-fg: oklch(0.585 0.163 149); /* #1f9c3f — текст зелёного бейджа */
+    --danger: oklch(0.637 0.237 26); /* #ff3b30 */
+    --danger-bg: oklch(0.972 0.009 20); /* #fff5f4 — фон красного бейджа */
+    --warning: oklch(0.78 0.163 66); /* #ff9f0a — оранжевый, статус «неактивен» */
+    --warning-bg: oklch(0.965 0.03 88); /* #fff2dc — фон оранжевого бейджа */
+    --info: oklch(0.55 0.23 275); /* #5c5ffe — индиго, статус «заморожено» */
+    --status-blue: #006ffd;
+    --status-blue-bg: #eaf2ff;
+    --chart-gmv: var(--brand); /* #9c5cfe — линия «Оборот» */
+    --chart-rev: oklch(0.72 0.26 344); /* #fe5ce8 — линия «Выручка» */
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --brand: oklch(0.628 0.229 297);
+    --ink: oklch(0.985 0 0);
+    --ink-muted: oklch(0.985 0 0 / 0.6);
+    --grey-1: oklch(0.442 0.006 286);
+    --grey-2: oklch(0.44 0.006 286);
+    --grey-3: oklch(0.37 0.005 286);
+    --grey-4: oklch(0.32 0.005 286);
+    --grey-5: oklch(0.27 0.004 286);
+    --success: oklch(0.723 0.19 150);
+    --success-bg: oklch(0.32 0.06 158);
+    --success-fg: oklch(0.75 0.17 150);
+    --danger: oklch(0.637 0.237 26);
+    --danger-bg: oklch(0.32 0.06 20);
+    --warning: oklch(0.78 0.163 66);
+    --warning-bg: oklch(0.34 0.06 80);
+    --info: oklch(0.62 0.2 275);
+    --chart-gmv: var(--brand);
+    --chart-rev: oklch(0.72 0.26 344);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    scrollbar-width: none; /* Firefox — скроллбары скрыты во всём приложении */
+    }
+  /* Chrome/Safari/Edge — полоса скрыта, прокрутка остаётся рабочей */
+  *::-webkit-scrollbar {
+    display: none;
+    }
+  /* Курсор-указатель на всех интерактивных элементах: Tailwind v4 не ставит его
+     по умолчанию. Явные утилиты (cursor-not-allowed и т.п.) перебивают это
+     правило, т.к. слой utilities выше base — дизейбл-состояния остаются целыми. */
+  button:not(:disabled),
+  [role="button"]:not([data-disabled]),
+  [role="menuitem"]:not([data-disabled]),
+  [role="menuitemcheckbox"]:not([data-disabled]),
+  [role="menuitemradio"]:not([data-disabled]),
+  [role="option"]:not([data-disabled]),
+  [role="tab"]:not([data-disabled]),
+  [role="switch"]:not([data-disabled]),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    }
+}
+
+/* Tables keep a visible scroll affordance on tablets without moving the page. */
+.table-cell-value {
+  min-width: 0;
+  max-width: 100%;
+}
+.table-cell-value[data-wrap] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .table-cell-value:not([data-wrap]) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .table-cell-value :where(div) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .table-cell-value:not([data-wrap]) :where(a, button, p),
+  .table-cell-value:not([data-wrap]) :where(div) > span:not([data-slot="status-pill"]) {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.table-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--grey-3) transparent;
+}
+.table-scroll::-webkit-scrollbar {
+  display: block;
+  height: 6px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: var(--grey-3);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

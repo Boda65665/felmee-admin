@@ -1,0 +1,38 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Локальные переменные окружения (в репо только .env.example)
+.env
+.env.*
+!.env.example
+
+# Локальный кеш скриншотов из Figma (не коммитим — источник правды в Figma)
+.figma/
+
+# Локальные настройки Claude Code (агенты, скиллы, память)
+.claude/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Claude Code personal overrides
+.claude/settings.local.json

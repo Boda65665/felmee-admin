@@ -1,0 +1,34 @@
+diff --git a/src/main/java/com/dev/felmee/file/main/service/FileService.java b/src/main/java/com/dev/felmee/file/main/service/FileService.java
+--- a/src/main/java/com/dev/felmee/file/main/service/FileService.java
++++ b/src/main/java/com/dev/felmee/file/main/service/FileService.java
+@@ -230,6 +230,16 @@
+         return link;
+     }
+ 
++    public String getInlineLink(Long id) {
++        if (!isExists(id)) return null;
++        File file = findById(id);
++        return objectStorageService.getInlinePresignedUrl(
++                file.getS3key(),
++                file.getOriginalName(),
++                file.getContentType()
++        );
++    }
++
+     public String getPreviewLink(Long id) {
+         if (!isExists(id)) return null;
+ 
+diff --git a/src/main/java/com/dev/felmee/file/main/controller/FileRestController.java b/src/main/java/com/dev/felmee/file/main/controller/FileRestController.java
+--- a/src/main/java/com/dev/felmee/file/main/controller/FileRestController.java
++++ b/src/main/java/com/dev/felmee/file/main/controller/FileRestController.java
+@@ -493,7 +493,9 @@
+                     .toUriString();
+         }
+         return switch (type) {
+-            case FULL -> fileService.getLink(file.getId());
++            case FULL -> "application/pdf".equalsIgnoreCase(file.getContentType())
++                    ? fileService.getInlineLink(file.getId())
++                    : fileService.getLink(file.getId());
+             case PREVIEW -> fileService.getPreviewLink(file.getId());
+         };
+     }
