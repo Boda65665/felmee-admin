@@ -7,6 +7,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 import {
   Card,
+  ClearFiltersButton,
   ConfirmDeleteNotificationDialog,
   DataTable,
   IconButton,
@@ -404,6 +405,7 @@ const NotificationsPage = () => {
             placeholder="Поиск по уведомлениям"
             className="w-full sm:max-w-[420px]"
           />
+          <ClearFiltersButton count={query.trim() ? 1 : 0} onClick={() => setQuery("")} />
           <SegmentTabs value={tab} onChange={setTab} options={TABS} />
           <button
             type="button"

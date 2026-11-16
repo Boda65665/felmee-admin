@@ -7,8 +7,11 @@ import {
   getSortedRowModel,
   useReactTable,
   type ColumnDef,
+  type ColumnFiltersState,
   type FilterFn,
+  type OnChangeFn,
   type RowData,
+  type SortingState,
 } from "@tanstack/react-table";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +39,10 @@ interface DataTableProps<T> {
   globalFilter?: string;
   /** Как матчить строку под глобальный поиск (по умолчанию — по всем полям). */
   globalFilterFn?: FilterFn<T>;
+  columnFilters?: ColumnFiltersState;
+  onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
+  sorting?: SortingState;
+  onSortingChange?: OnChangeFn<SortingState>;
   /** Включает пагинацию с заданным размером страницы. */
   pageSize?: number;
   /** Доп. классы строки тела (переопределяют дефолтные отступы/размер текста). */
@@ -56,6 +63,10 @@ export function DataTable<T>({
   gridClassName,
   globalFilter,
   globalFilterFn,
+  columnFilters,
+  onColumnFiltersChange,
+  sorting,
+  onSortingChange,
   pageSize,
   rowClassName,
   headerRowClassName,
@@ -63,8 +74,10 @@ export function DataTable<T>({
   const table = useReactTable({
     data,
     columns,
-    state: { globalFilter: globalFilter ?? "" },
+    state: { globalFilter: globalFilter ?? "", ...(columnFilters !== undefined ? { columnFilters } : {}), ...(sorting !== undefined ? { sorting } : {}) },
     globalFilterFn,
+    onColumnFiltersChange,
+    onSortingChange,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),

@@ -23,6 +23,7 @@ import { ru } from "date-fns/locale";
 import {
   Avatar,
   Card,
+  ClearFiltersButton,
   FileUploadCard,
   SearchInput,
   type FileKind,
@@ -218,12 +219,10 @@ function ChatsList({ onOpen }: { onOpen: (dialogId: number) => void }) {
     <div className="flex min-w-0 gap-6">
       {/* Список */}
       <div className="flex min-w-0 flex-1 flex-col gap-4">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Поиск по чатам"
-          className="bg-white"
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Поиск по чатам" className="bg-white" />
+          <ClearFiltersButton count={(query.trim() ? 1 : 0) + (tab !== "all" ? 1 : 0)} onClick={() => { setQuery(""); setTab("all"); }} />
+        </div>
 
         <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl bg-grey-4/60 p-1">
           {TABS.map((item) => (

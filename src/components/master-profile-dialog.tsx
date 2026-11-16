@@ -11,6 +11,7 @@ import type {
   AdminMasterProfile,
   AdminMasterUpdateRequest,
 } from "@/lib/api";
+import { clientPlaceLocation } from "@/lib/master-client-place";
 import { AvatarImage } from "./avatar";
 import { AddressAutocompleteField } from "./address-autocomplete-field";
 import { CityAutocompleteField } from "./city-autocomplete-field";
@@ -106,8 +107,10 @@ export function MasterProfileDialog({
   const [inSalonName, setInSalonName] = useState("");
   const [inSalonAddress, setInSalonAddress] = useState("");
   const [atMasterAddress, setAtMasterAddress] = useState("");
+  const [clientAddress, setClientAddress] = useState("");
   const [inSalonGeo, setInSalonGeo] = useState<MasterLocation["geolocation"]>(null);
   const [atMasterGeo, setAtMasterGeo] = useState<MasterLocation["geolocation"]>(null);
+  const [clientGeo, setClientGeo] = useState<MasterLocation["geolocation"]>(null);
   const [clientRadius, setClientRadius] = useState<MasterLocation["radius_km"]>(null);
 
   const fillFromProfile = () => {
@@ -134,12 +137,15 @@ export function MasterProfileDialog({
     setPlaces(locs.map((l) => l.service_location as ServiceLocation));
     const inSalon = locs.find((l) => l.service_location === "IN_SALON");
     const atMaster = locs.find((l) => l.service_location === "AT_MASTER_PLACE");
+    const atClient = locs.find((l) => l.service_location === "CLIENT_PLACE");
     setInSalonName(inSalon?.salon_name ?? "");
     setInSalonAddress(inSalon?.address ?? "");
     setAtMasterAddress(atMaster?.address ?? "");
+    setClientAddress(atClient?.address ?? "");
     setInSalonGeo(inSalon?.geolocation ?? null);
     setAtMasterGeo(atMaster?.geolocation ?? null);
-    setClientRadius(locs.find(l => l.service_location === "CLIENT_PLACE")?.radius_km ?? null);
+    setClientGeo(atClient?.geolocation ?? null);
+    setClientRadius(atClient?.radius_km ?? null);
   };
 
   // Перезаполнение при открытии/смене профиля.
@@ -157,6 +163,11 @@ export function MasterProfileDialog({
 
   const has = (value: ServiceLocation) => places.includes(value);
   const radiusRequired = has("CLIENT_PLACE") && clientRadius == null;
+  const originalClient = profile?.service_locations?.find((l) => l.service_location === "CLIENT_PLACE");
+  const clientAddressNeedsGeo = has("CLIENT_PLACE") && (
+    (!originalClient && !clientAddress.trim()) ||
+    (clientAddress.trim() !== (originalClient?.address ?? "").trim() && !clientGeo)
+  );
 
   const submit = handleSubmit(async (values) => {
     if (!onSave || !profile) return;
@@ -207,7 +218,7 @@ export function MasterProfileDialog({
     if (JSON.stringify(currentCats) !== JSON.stringify(nextCats))
       body.category_ids = categoryIds;
 
-    // Addresses and coordinates travel together; CLIENT_PLACE has no fixed address.
+    // Адрес и координаты сохраняются вместе; для прежнего центра можно менять только радиус.
     const origLocs = profile.service_locations ?? [];
     const nextLocs: MasterLocation[] = places.map((p) => {
       const loc: MasterLocation = { service_location: p };
@@ -218,7 +229,9 @@ export function MasterProfileDialog({
       } else if (p === "AT_MASTER_PLACE") {
         loc.address = atMasterAddress.trim();
         loc.geolocation = atMasterGeo;
-      } else if (clientRadius != null) {
+      } else {
+        loc.address = clientAddress.trim() || null;
+        loc.geolocation = clientGeo;
         loc.radius_km = clientRadius;
       }
       return loc;
@@ -234,8 +247,8 @@ export function MasterProfileDialog({
       JSON.stringify({
         s: l.service_location,
         n: l.service_location === "IN_SALON" ? l.salon_name ?? null : null,
-        a: l.service_location !== "CLIENT_PLACE" ? l.address ?? null : null,
-        g: l.service_location !== "CLIENT_PLACE" && l.geolocation ? { lat: l.geolocation.lat, lon: l.geolocation.lon } : null,
+        a: l.address ?? null,
+        g: l.geolocation ? { lat: l.geolocation.lat, lon: l.geolocation.lon } : null,
         r: l.service_location === "CLIENT_PLACE" ? l.radius_km ?? null : null,
       });
     const currentLocsNorm = origLocs.map(normLoc).sort().join("|");
@@ -252,7 +265,7 @@ export function MasterProfileDialog({
         const label = PLACE_OPTIONS.find(
           (o) => o.value === loc.service_location,
         )?.label;
-        if (loc.service_location !== "CLIENT_PLACE" && !loc.address) {
+        if (!loc.address && (loc.service_location !== "CLIENT_PLACE" || !originalClient)) {
           setError(`Укажите адрес для места «${label}»`);
           return;
         }
@@ -260,12 +273,14 @@ export function MasterProfileDialog({
           setError("Укажите название салона для места «В салоне»");
           return;
         }
-        if (loc.service_location !== "CLIENT_PLACE" && !loc.geolocation) {
+        if (!loc.geolocation && (loc.service_location !== "CLIENT_PLACE" || !originalClient || loc.address !== originalClient.address)) {
           setError(`Выберите адрес из подсказок для места «${label}»`);
           return;
         }
       }
-      body.service_locations = nextLocs;
+      body.service_locations = nextLocs.map((loc) => loc.service_location === "CLIENT_PLACE"
+        ? clientPlaceLocation(clientAddress, clientGeo ?? null, clientRadius ?? null, originalClient ?? null)
+        : loc);
     }
 
     if (Object.keys(body).length === 0) {
@@ -292,9 +307,13 @@ export function MasterProfileDialog({
   const viewInSalon = viewLocations.find(
     (l) => l.service_location === "IN_SALON",
   );
+  const viewAtClient = viewLocations.find(
+    (l) => l.service_location === "CLIENT_PLACE",
+  );
   const addressNeedsGeo =
     (has("AT_MASTER_PLACE") && !atMasterGeo && atMasterAddress.trim() !== (viewAtMaster?.address ?? "").trim()) ||
-    (has("IN_SALON") && !inSalonGeo && inSalonAddress.trim() !== (viewInSalon?.address ?? "").trim());
+    (has("IN_SALON") && !inSalonGeo && inSalonAddress.trim() !== (viewInSalon?.address ?? "").trim()) ||
+    clientAddressNeedsGeo;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -502,8 +521,23 @@ export function MasterProfileDialog({
 
           {(editing ? has("CLIENT_PLACE") : viewHas("CLIENT_PLACE")) && (
             <div className="flex flex-col gap-3 rounded-xl border border-grey-3 bg-white p-4">
+              <span className="flex items-center gap-1.5 text-sm leading-[1.3] text-ink-muted">
+                <Info className="size-4 shrink-0" />У клиента — базовый адрес, от которого считается радиус выезда
+              </span>
               {editing ? (
-                <div className="flex flex-col gap-1.5">
+                <>
+                  <AddressAutocompleteField
+                    label="Базовый адрес выезда"
+                    value={clientAddress}
+                    onChange={(text) => {
+                      setClientAddress(text);
+                      setClientGeo(text.trim() === originalClient?.address?.trim() ? originalClient.geolocation : null);
+                    }}
+                    onSelect={(suggestion) => { setClientAddress(suggestion.address); setClientGeo({ lat: suggestion.lat, lon: suggestion.lon }); }}
+                    error={clientAddressNeedsGeo ? "Выберите базовый адрес из списка подсказок" : undefined}
+                    helperText="Выберите базовый адрес из списка подсказок"
+                  />
+                  <div className="flex flex-col gap-1.5">
                   <span id="client-radius-label" className="text-sm leading-[1.3] text-ink-muted">Максимальный радиус выезда</span>
                   <Select value={clientRadius == null ? "" : String(clientRadius)} onValueChange={(value) => setClientRadius(Number(value) as 1 | 5 | 10 | 20)}>
                     <SelectTrigger aria-labelledby="client-radius-label" aria-required="true" aria-invalid={radiusRequired}><SelectValue placeholder="Выберите радиус" /></SelectTrigger>
@@ -512,14 +546,14 @@ export function MasterProfileDialog({
                     </SelectContent>
                   </Select>
                   {radiusRequired && <span className="text-xs text-danger">Укажите максимальный радиус выезда</span>}
-                </div>
+                  </div>
+                </>
               ) : (
-                <Field label="Максимальный радиус выезда" value={viewLocations.find(l => l.service_location === "CLIENT_PLACE")?.radius_km != null ? `${viewLocations.find(l => l.service_location === "CLIENT_PLACE")?.radius_km} км` : "Не задан"} readOnly />
+                <>
+                  <Field label="Базовый адрес выезда" value={viewAtClient?.address ?? "Не задан"} readOnly />
+                  <Field label="Максимальный радиус выезда" value={viewAtClient?.radius_km != null ? `${viewAtClient.radius_km} км` : "Не задан"} readOnly />
+                </>
               )}
-            <p className="flex items-center gap-1.5 text-sm leading-[1.4] text-ink-muted">
-              <Info className="size-4 shrink-0" />У клиента — адрес указывает
-              клиент при оформлении записи, отдельное поле не требуется
-            </p>
             </div>
           )}
         </SectionCard>

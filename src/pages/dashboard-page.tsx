@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 
 import {
   KpiCard,
-  DateFilter,
+  ResettableDateFilter,
   MetricsGrid,
   MetricChartCard,
   type ChartRow,
@@ -90,7 +90,7 @@ const DashboardPage = () => {
 
   return (
     <>
-      <DateFilter />
+      <ResettableDateFilter />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {KPIS.map(({ to, ...kpi }) => (

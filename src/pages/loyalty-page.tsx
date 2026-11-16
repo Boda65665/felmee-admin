@@ -6,6 +6,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 
 import {
   Card,
+  ClearFiltersButton,
   DataTable,
   DateFilter,
   LoyaltyRewardDialog,
@@ -18,6 +19,7 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
+import { hasChangedRange } from "@/lib/filter-reset";
 import {
   useReferralProfit,
   useReferralRules,
@@ -300,7 +302,10 @@ export default function LoyaltyPage() {
         onSave={saveRule}
       />
 
-      <DateFilter value={range} onChange={setRange} />
+      <div className="flex flex-wrap items-center gap-3">
+        <DateFilter value={range} onChange={setRange} />
+        <ClearFiltersButton count={(hasChangedRange(range, defaultRange()) ? 1 : 0) + (tab !== "all" ? 1 : 0)} onClick={() => { setRange(defaultRange()); setTab("all"); }} />
+      </div>
 
       {/* KPI-карточки */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

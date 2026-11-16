@@ -10,6 +10,7 @@ import {
   Card,
   CheckboxFilterMenu,
   CityFilterMenu,
+  ClearFiltersButton,
   DataTable,
   MasterProfileDialog,
   ModerationActions,
@@ -184,6 +185,16 @@ const MastersModerationPage = () => {
   );
 
   const rows = useMemo(() => (data?.items ?? []).map(toRow), [data]);
+  const activeFilters = (roles.length ? 1 : 0) + (cities.length ? 1 : 0) +
+    (query.trim() ? 1 : 0) + (sort ? 1 : 0) + (activeTab !== TABS[0] ? 1 : 0);
+  const clearFilters = () => {
+    setRoles([]);
+    setCities([]);
+    setCityQuery("");
+    setQuery("");
+    setSort(null);
+    setActiveTab(TABS[0]);
+  };
 
   const { mutateAsync: approveFn } = useApproveModerationRequest();
   const rejectMutation = useRejectModerationRequest();
@@ -390,11 +401,10 @@ const MastersModerationPage = () => {
 
       {/* Контент вкладки: общий поиск + таблица; набор колонок зависит от вкладки */}
       <Card>
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Поиск по имени, названию, причине"
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Поиск по имени, названию, причине" />
+          <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
+        </div>
 
         <div className="mt-9">
           {isLoading ? (

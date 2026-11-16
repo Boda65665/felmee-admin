@@ -12,6 +12,7 @@ import {
   SearchInput,
   SegmentTabs,
   CheckboxFilterMenu,
+  ClearFiltersButton,
   DocumentReviewDialog,
   type DateRange,
   type StatusPillMeta,
@@ -319,6 +320,15 @@ const DocumentsPage = () => {
 
 
   const key = selected?.key ?? null;
+  const activeFilters = (businessTypes.length ? 1 : 0) + (statuses.length ? 1 : 0) +
+    (bankStatuses.length ? 1 : 0) + (submittedRange?.from ? 1 : 0) + (query.trim() ? 1 : 0);
+  const clearFilters = () => {
+    setBusinessTypes([]);
+    setStatuses([]);
+    setBankStatuses([]);
+    setSubmittedRange(undefined);
+    setQuery("");
+  };
 
   return (
     <>
@@ -379,12 +389,10 @@ const DocumentsPage = () => {
       />
 
       <Card className="flex flex-col gap-8 md:min-h-[min(756px,calc(100dvh-100px))]">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Поиск по имени, ИНН"
-          className="max-w-[547px]"
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Поиск по имени, ИНН" className="max-w-[547px]" />
+          <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
+        </div>
 
         {isLoading ? (
           <p className="py-10 text-center text-base text-ink-muted">

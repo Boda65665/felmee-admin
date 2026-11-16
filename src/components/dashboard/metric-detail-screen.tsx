@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { PageBackHeader } from "@/components/page-back-header";
-import { DateFilter } from "@/components/date-filter";
+import { ResettableDateFilter } from "@/components/date-filter";
 import {
   MetricChartCard,
   type ChartRow,
@@ -39,7 +39,7 @@ export const MetricDetailScreen = ({
   return (
     <>
       {showBackHeader && <PageBackHeader title={title} />}
-      <DateFilter />
+      <ResettableDateFilter />
       <MetricChartCard
         title={title}
         data={data}

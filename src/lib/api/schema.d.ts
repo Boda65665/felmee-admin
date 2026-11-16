@@ -33248,7 +33248,7 @@ export interface components {
          * @description При изменении профиля типы локаций в списке не должны повторяться.
          *     Для IN_SALON обязательны непустые salon_name, address и geolocation; radius_km должен быть null.
          *     Для AT_MASTER_PLACE обязательны непустой address и geolocation; radius_km должен быть null.
-         *     Для CLIENT_PLACE поля salon_name, address и geolocation должны отсутствовать или быть null; radius_km необязателен.
+         *     Для CLIENT_PLACE salon_name должен быть null. Базовый address необязателен; при его передаче geolocation можно указать вместе с ним, иначе адрес геокодируется. geolocation без address недопустима. Если address не передан, сохраняется прежний центр выезда; при его отсутствии используется адрес мастера. radius_km необязателен и может быть равен 1, 5, 10 или 20.
          */
         AdminMasterServiceLocation: {
             /** @enum {string} */

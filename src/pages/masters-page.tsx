@@ -34,6 +34,7 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
+import { hasChangedRange } from "@/lib/filter-reset";
 import {
 
   useBlockProvider,
@@ -486,15 +487,19 @@ const MastersPage = () => {
   );
 
 
-  // Число активных фильтров (для кнопки «Сбросить фильтры» у поиска).
   const activeFilters =
     (roles.length > 0 ? 1 : 0) +
     (cities.length > 0 ? 1 : 0) +
-    (statuses.length > 0 ? 1 : 0);
+    (statuses.length > 0 ? 1 : 0) +
+    (query.trim() ? 1 : 0) + (sort ? 1 : 0) +
+    (hasChangedRange(range, defaultRange()) ? 1 : 0);
   const clearFilters = () => {
     setRoles([]);
     setCities([]);
     setStatuses([]);
+    setQuery("");
+    setSort(null);
+    setRange(defaultRange());
   };
 
   return (

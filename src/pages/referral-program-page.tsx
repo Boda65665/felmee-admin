@@ -16,6 +16,7 @@ import {
   SearchInput,
   SegmentTabs,
   CheckboxFilterMenu,
+  ClearFiltersButton,
   PartnerInfoDialog,
   type DateRange,
 } from "@/components";
@@ -31,6 +32,7 @@ import {
   type ReferralTarget,
 } from "@/lib/api";
 import { formatMillions } from "@/lib/format";
+import { hasChangedRange } from "@/lib/filter-reset";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ данные
@@ -280,6 +282,16 @@ const ReferralProgramPage = () => {
     limit: LIMIT,
   });
   const partners = partnersQuery.data?.items ?? [];
+  const activeFilters = (query.trim() ? 1 : 0) + (statusFilter.length ? 1 : 0) +
+    (clientLevel.length ? 1 : 0) + (businessLevel.length ? 1 : 0) +
+    (hasChangedRange(range, defaultRange()) ? 1 : 0);
+  const clearFilters = () => {
+    setQuery("");
+    setStatusFilter([]);
+    setClientLevel([]);
+    setBusinessLevel([]);
+    setRange(defaultRange());
+  };
   const levelsQuery = useReferralSystemLevels();
   const updateLevel = useUpdateReferralLevelRate();
   const toast = useToast();
@@ -385,7 +397,10 @@ const ReferralProgramPage = () => {
         to={to || undefined}
       />
 
-      <DateFilter value={range} onChange={setRange} />
+      <div className="flex flex-wrap items-center gap-3">
+        <DateFilter value={range} onChange={setRange} />
+        <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
+      </div>
 
       {/* KPI из partners/summary (живые): активные/неактивные партнёры + сумма. */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">

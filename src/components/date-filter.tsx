@@ -18,6 +18,8 @@ import type { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { Calendar } from "@/components/ui/calendar";
+import { ClearFiltersButton } from "@/components/table-controls";
+import { hasChangedRange } from "@/lib/filter-reset";
 import {
   Popover,
   PopoverContent,
@@ -129,7 +131,7 @@ export function DateFilter({
     defaultValue ?? defaultRange(),
   );
 
-  const isControlled = value !== undefined;
+  const isControlled = onChange !== undefined;
   const range = isControlled ? value : internal;
 
   const update = (next: DateRange | undefined) => {
@@ -196,5 +198,16 @@ export function DateFilter({
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Период на обзорных экранах, где значение хранится только в самом фильтре. */
+export function ResettableDateFilter() {
+  const [range, setRange] = useState<DateRange | undefined>(defaultRange);
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <DateFilter value={range} onChange={setRange} />
+      <ClearFiltersButton count={hasChangedRange(range, defaultRange()) ? 1 : 0} onClick={() => setRange(defaultRange())} />
+    </div>
   );
 }

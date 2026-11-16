@@ -12,6 +12,7 @@ import {
   Card,
   ChatViewDialog,
   CheckboxFilterMenu,
+  ClearFiltersButton,
   ComplaintDecisionDialog,
   ComplaintReasonDialog,
   ComplaintReviewDialog,
@@ -49,6 +50,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
+import { hasChangedRange } from "@/lib/filter-reset";
 import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 import { useInfiniteComplaints } from "@/lib/api/infinite-lists";
 import type { ProfileTarget } from "@/components/profile-name";
@@ -342,6 +344,15 @@ export default function ComplaintsPage() {
   });
 
   const rows = useMemo(() => (data?.items ?? []).map(toRow), [data]);
+  const activeFilters = (types.length ? 1 : 0) + (query.trim() ? 1 : 0) +
+    (status !== "OPEN" ? 1 : 0) +
+    (hasChangedRange(range, defaultRange()) ? 1 : 0);
+  const clearFilters = () => {
+    setTypes([]);
+    setQuery("");
+    setStatus("OPEN");
+    setRange(defaultRange());
+  };
 
   // Детали активной жалобы нужны всем модалкам разбора (причина/решение/
   // отзыв/услуга/кейс) — в них подставляются реальные данные из снапшотов.
@@ -588,6 +599,7 @@ export default function ComplaintsPage() {
             placeholder="Поиск по участнику жалобы"
             className="max-w-[547px]"
           />
+          <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
           <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl sm:ml-auto bg-grey-4/60 p-1">
             {TABS.map(([value, label]) => (
               <button

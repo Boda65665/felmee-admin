@@ -578,7 +578,7 @@ export function DocumentReviewDialog({
         body.files = typeChangeFiles(requirements.data, typeDrafts);
         const required = ["full_name", "inn", "phone", "email", "activity_type"] as const;
         if (required.some(field => !values[field]?.trim())) {
-          setFormError("Для смены юридического статуса заполните ФИО, ИНН, телефон, e-mail и вид деятельности.");
+          setFormError(`Для смены юридического статуса заполните ${values.business_type === "LLC" ? "название организации" : "ФИО"}, ИНН, телефон, e-mail и вид деятельности.`);
           return;
         }
         if (values.business_type !== "LLC" && card.business_type === "LLC" && !values.identity) {
@@ -874,7 +874,7 @@ export function DocumentReviewDialog({
                 <SectionTitle>Основная информация</SectionTitle>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <Field
-                    label="ФИО"
+                    label={selectedBusinessType === "LLC" ? "Название организации" : "ФИО"}
                     error={partnerForm.formState.errors.full_name?.message}
                     {...partnerForm.register("full_name")}
                   />

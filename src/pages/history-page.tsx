@@ -7,6 +7,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import {
   Avatar,
   Card,
+  ClearFiltersButton,
   DataTable,
   DateFilter,
   SearchInput,
@@ -17,6 +18,7 @@ import {
   type AdminActionHistoryItem,
 } from "@/lib/api";
 import { usePersistentState } from "@/lib/use-persistent-state";
+import { hasChangedRange } from "@/lib/filter-reset";
 
 /* ------------------------------------------------------------------ данные */
 
@@ -125,6 +127,11 @@ const HistoryPage = () => {
     () => (data?.items ?? []).map(toEntry),
     [data],
   );
+  const activeFilters = (query.trim() ? 1 : 0) + (hasChangedRange(range, defaultRange()) ? 1 : 0);
+  const clearFilters = () => {
+    setQuery("");
+    setRange(defaultRange());
+  };
 
 
   return (
@@ -132,11 +139,10 @@ const HistoryPage = () => {
       <DateFilter value={range} onChange={setRange} />
 
       <Card>
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Поиск по событию или сотруднику"
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput value={query} onChange={setQuery} placeholder="Поиск по событию или сотруднику" />
+          <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
+        </div>
 
         <div className="mt-9">
           {isLoading ? (

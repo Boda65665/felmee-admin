@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type { ColumnDef, FilterFn } from "@tanstack/react-table";
+import type { ColumnDef, ColumnFiltersState, FilterFn, SortingState } from "@tanstack/react-table";
 
 import { Card } from "@/components/card";
 import { DataTable } from "@/components/data-table";
 import { SearchInput } from "@/components/search-input";
 import { StatusPill } from "@/components/status-pill";
-import { CheckboxFilterMenu, SortMenu } from "@/components/table-controls";
+import { CheckboxFilterMenu, ClearFiltersButton, SortMenu } from "@/components/table-controls";
 import { includesSelected, parseMoney } from "@/lib/table";
 import { cn } from "@/lib/utils";
 
@@ -149,15 +149,22 @@ const GRID =
 /** Таблица операций: поиск, сортируемые колонки и статусы. */
 export function TransactionsTable({ rows }: { rows: Transaction[] }) {
   const [query, setQuery] = useState("");
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const activeFilters = (query.trim() ? 1 : 0) + columnFilters.length + sorting.length;
+
+  const clearFilters = () => {
+    setQuery("");
+    setColumnFilters([]);
+    setSorting([]);
+  };
 
   return (
     <Card>
-      <SearchInput
-        value={query}
-        onChange={setQuery}
-        placeholder="Поиск по пользователю, операции, времени"
-        className="max-w-[547px]"
-      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchInput value={query} onChange={setQuery} placeholder="Поиск по пользователю, операции, времени" className="max-w-[547px]" />
+        <ClearFiltersButton count={activeFilters} onClick={clearFilters} />
+      </div>
 
       <div className="mt-9">
         <DataTable
@@ -166,6 +173,10 @@ export function TransactionsTable({ rows }: { rows: Transaction[] }) {
           gridClassName={GRID}
           globalFilter={query}
           globalFilterFn={searchTx}
+          columnFilters={columnFilters}
+          onColumnFiltersChange={setColumnFilters}
+          sorting={sorting}
+          onSortingChange={setSorting}
         />
       </div>
     </Card>

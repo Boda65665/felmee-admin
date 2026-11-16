@@ -368,11 +368,7 @@ export function CityFilterHeader({
   );
 }
 
-/**
- * Кнопка «Сбросить фильтры» справа от строки поиска. Появляется, когда активен
- * хотя бы один фильтр (`count > 0`); клик сбрасывает все фильтры. Какие именно
- * фильтры активны — видно по брендовым заголовкам колонок со счётчиком.
- */
+/** Сброс всех настроек выборки на странице, когда они отличаются от начальных. */
 export function ClearFiltersButton({
   count,
   onClick,
@@ -385,10 +381,11 @@ export function ClearFiltersButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex h-12 shrink-0 items-center gap-1.5 rounded-xl border border-grey-4 px-4 text-sm font-medium text-ink-muted transition-colors hover:bg-grey-5 hover:text-ink"
+      className="flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-brand/25 bg-brand/5 px-4 text-sm font-medium text-brand transition-colors hover:border-brand/45 hover:bg-brand/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
     >
-      <X className="size-4" />
+      <X className="size-4" aria-hidden="true" />
       Сбросить фильтры
+      <span className="flex min-w-5 items-center justify-center rounded-full bg-brand/10 px-1.5 text-xs leading-5" aria-label={`Активных фильтров: ${count}`}>{count}</span>
     </button>
   );
 }
