@@ -19,6 +19,7 @@ import {
 } from "react";
 import { format, isToday, isYesterday, parseISO } from "date-fns";
 import { ru } from "date-fns/locale";
+import { useSearchParams } from "react-router-dom";
 
 import {
   Avatar,
@@ -824,14 +825,24 @@ function ChatView({
 /* --------------------------------------------------------------------- экран */
 
 export default function ChatsPage() {
-  const [openDialogId, setOpenDialogId] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dialogId = Number(searchParams.get("dialog_id"));
+  const openDialogId = Number.isSafeInteger(dialogId) && dialogId > 0 ? dialogId : null;
+
+  const closeChat = () => {
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("dialog_id");
+      return next;
+    });
+  };
 
   // Live-обновления обращений + события прочтения на время экрана «Обращения».
   useSupportRealtime();
 
   return openDialogId != null ? (
-    <ChatView dialogId={openDialogId} onBack={() => setOpenDialogId(null)} />
+    <ChatView key={openDialogId} dialogId={openDialogId} onBack={closeChat} />
   ) : (
-    <ChatsList onOpen={setOpenDialogId} />
+    <ChatsList onOpen={(id) => setSearchParams({ dialog_id: String(id) })} />
   );
 }

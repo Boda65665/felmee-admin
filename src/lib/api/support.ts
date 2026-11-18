@@ -139,6 +139,32 @@ export const reopenSupportChat = async (
   return unwrap(res)!;
 };
 
+export type SupportChatTarget =
+  | { kind: "user"; id: number }
+  | { kind: "salon"; id: number };
+
+export const useStartSupportChat = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (target: SupportChatTarget): Promise<AdminSupportChat> => {
+      if (target.kind === "salon") {
+        const res = await api.POST("/api/admin/support/salons/{salon_id}/chat", {
+          params: { path: { salon_id: target.id } },
+        });
+        return unwrap(res)!;
+      }
+      const res = await api.POST("/api/admin/support/users/{user_id}/chat", {
+        params: { path: { user_id: target.id } },
+      });
+      return unwrap(res)!;
+    },
+    onSuccess: (chat) => {
+      queryClient.setQueryData(supportKeys.detail(chat.dialog_id), chat);
+      queryClient.invalidateQueries({ queryKey: supportKeys.all });
+    },
+  });
+};
+
 /**
  * Закрыть обращение (прямое закрытие админом).
  * `POST /api/admin/support/chats/{dialogId}/close`, раздел прав `SUPPORT: FULL`.

@@ -36199,7 +36199,7 @@
           "Админ-панель — чат поддержки"
         ],
         "summary": "Отправить сообщение от имени поддержки",
-        "description": "Требуется доступ `SUPPORT:FULL`. Публичный отправитель сообщения — системный\nаккаунт поддержки (`sender_id = -1`), реальный администратор сохраняется отдельно.\nДля ответа на конкретное сообщение передайте его ID в `reply_message_id`.\n",
+        "description": "Требуется доступ `SUPPORT:FULL`. Публичный отправитель сообщения — системный\nаккаунт поддержки (`sender_id = -1`), реальный администратор сохраняется отдельно.\nЕсли открытого обращения ещё нет или предыдущее закрыто, отправка автоматически открывает новое.\nДля ответа на конкретное сообщение передайте его ID в `reply_message_id`.\n\nГотовность прикрепляемых файлов: Все file_ids должны иметь purpose MESSAGE и статус UPLOADED; в чате\nподдержки разрешены только изображения и документы. PENDING и FAILED не принимаются при прикреплении\nновых файлов. Проверки доступа, владельца и прочие ограничения операции сохраняются. Перед отправкой дождитесь успешного ответа POST /api/file/upload.\n",
         "security": [
           {
             "bearerAuth": []
@@ -36292,9 +36292,6 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
           }
         }
       }
@@ -43998,6 +43995,112 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/support/users/{user_id}/chat": {
+      "post": {
+        "tags": [
+          "Админ-панель — чат поддержки"
+        ],
+        "summary": "Открыть обращение клиента или мастера",
+        "description": "Идентификатор берётся из профиля клиента или мастера. Требуется доступ `SUPPORT:FULL`. Открывает новое обращение, если открытого ещё нет. Возвращает текущий диалог и открытое обращение. Сообщение отправляется отдельным запросом.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "jwtCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Обращение открыто",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSupportChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidBody"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/AdminPanelForbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/admin/support/salons/{salon_id}/chat": {
+      "post": {
+        "tags": [
+          "Админ-панель — чат поддержки"
+        ],
+        "summary": "Открыть обращение владельца салона",
+        "description": "По идентификатору салона открывается диалог поддержки с его владельцем. Требуется доступ `SUPPORT:FULL`. Открывает новое обращение, если открытого ещё нет. Возвращает текущий диалог и открытое обращение. Сообщение отправляется отдельным запросом.",
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "jwtCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "salon_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Обращение открыто",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminSupportChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/InvalidBody"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/AdminPanelForbidden"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"

@@ -360,6 +360,7 @@ const UsersPage = () => {
             showEdit={false}
             showChat
             chatClientId={row.original.id}
+            supportChatTarget={{ kind: "user", id: row.original.id }}
             onBlock={(reason) => handleBlock(row.original.id, reason)}
             onUnblock={() =>
               setUnblock({

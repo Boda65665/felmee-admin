@@ -1,5 +1,11 @@
-import { Ban, MessageCircle } from "lucide-react";
+import { Ban, MessageCircle, MessageSquarePlus } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+import { useMyPermissions } from "@/lib/api";
+import { useStartSupportChat, type SupportChatTarget } from "@/lib/api/support";
+import { useErrorPopupStore } from "@/lib/error-popup-store";
+import { ROUTES } from "@/lib/routes";
 
 import { IconButton } from "./icon-button";
 import { BlockUserDialog } from "./block-user-dialog";
@@ -22,6 +28,7 @@ export function RowActions({
   onUnblock,
   showChat = false,
   chatClientId = null,
+  supportChatTarget,
   blockVariant = "user",
 }: {
   blocked: boolean;
@@ -39,6 +46,7 @@ export function RowActions({
   showChat?: boolean;
   /** Клиент, чьи чаты показывать в модалке (обязателен при `showChat`). */
   chatClientId?: number | null;
+  supportChatTarget?: SupportChatTarget;
   /**
    * Какая модалка блокировки: `user` — `BlockUserDialog` (по умолчанию);
    * `master`/`salon` — `BlockAccountDialog` (свой набор причин по `target`).
@@ -47,6 +55,13 @@ export function RowActions({
 }) {
   const [blockOpen, setBlockOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+
+  const navigate = useNavigate();
+  const { data: permissions } = useMyPermissions(supportChatTarget != null);
+  const startChat = useStartSupportChat();
+  const canStartChat = permissions?.some(
+    ({ section, access_level }) => section === "SUPPORT" && access_level === "FULL",
+  );
 
   const accountVariant = blockVariant === "user" ? null : blockVariant;
 
@@ -78,8 +93,21 @@ export function RowActions({
       {showChat && (
         <IconButton
           icon={MessageCircle}
-          label="Чат"
+          label="История переписок"
           onClick={() => setChatOpen(true)}
+        />
+      )}
+      {supportChatTarget && canStartChat && (
+        <IconButton
+          icon={MessageSquarePlus}
+          label="Открыть чат поддержки"
+          disabled={startChat.isPending}
+          onClick={() =>
+            startChat.mutate(supportChatTarget, {
+              onSuccess: (chat) => navigate(ROUTES.chats + "?dialog_id=" + chat.dialog_id),
+              onError: (error) => useErrorPopupStore.getState().show(error, "Не удалось открыть чат"),
+            })
+          }
         />
       )}
       {blocked ? (

@@ -20974,7 +20974,12 @@ export interface paths {
          * Отправить сообщение от имени поддержки
          * @description Требуется доступ `SUPPORT:FULL`. Публичный отправитель сообщения — системный
          *     аккаунт поддержки (`sender_id = -1`), реальный администратор сохраняется отдельно.
+         *     Если открытого обращения ещё нет или предыдущее закрыто, отправка автоматически открывает новое.
          *     Для ответа на конкретное сообщение передайте его ID в `reply_message_id`.
+         *
+         *     Готовность прикрепляемых файлов: Все file_ids должны иметь purpose MESSAGE и статус UPLOADED; в чате
+         *     поддержки разрешены только изображения и документы. PENDING и FAILED не принимаются при прикреплении
+         *     новых файлов. Проверки доступа, владельца и прочие ограничения операции сохраняются. Перед отправкой дождитесь успешного ответа POST /api/file/upload.
          */
         post: {
             parameters: {
@@ -21054,7 +21059,6 @@ export interface paths {
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["AdminPanelForbidden"];
                 404: components["responses"]["NotFound"];
-                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -26475,6 +26479,96 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/support/users/{user_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Открыть обращение клиента или мастера
+         * @description Идентификатор берётся из профиля клиента или мастера. Требуется доступ `SUPPORT:FULL`. Открывает новое обращение, если открытого ещё нет. Возвращает текущий диалог и открытое обращение. Сообщение отправляется отдельным запросом.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    user_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение открыто */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminSupportChatResponse"];
+                    };
+                };
+                400: components["responses"]["InvalidBody"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminPanelForbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/support/salons/{salon_id}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Открыть обращение владельца салона
+         * @description По идентификатору салона открывается диалог поддержки с его владельцем. Требуется доступ `SUPPORT:FULL`. Открывает новое обращение, если открытого ещё нет. Возвращает текущий диалог и открытое обращение. Сообщение отправляется отдельным запросом.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    salon_id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Обращение открыто */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminSupportChatResponse"];
+                    };
+                };
+                400: components["responses"]["InvalidBody"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminPanelForbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

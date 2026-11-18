@@ -66,6 +66,7 @@ type Row = {
    * это `salonId`, у мастера — `id`. Используется для профиля и блокировки.
    */
   providerId: number;
+  salonId: number | null;
   /** Роль в API — нужна для эндпоинтов блокировки. */
   apiRole: MasterSalonRole;
   role: AccountRole;
@@ -151,6 +152,7 @@ const toRow = (item: AdminMasterSalonListItem): Row => ({
   id: item.id,
   // Салон адресуется по salonId; у мастера salonId нет — берём id.
   providerId: item.role === "SALON" ? item.salonId ?? item.id : item.id,
+  salonId: item.salonId ?? null,
   apiRole: item.role,
   role: ROLE_TO_UI[item.role],
   name: item.name || item.phone || "Без имени",
@@ -463,6 +465,13 @@ const MastersPage = () => {
             showView={false}
             showEdit={false}
             blockVariant={row.original.role}
+            supportChatTarget={
+              row.original.apiRole === "SALON"
+                ? row.original.salonId != null
+                  ? { kind: "salon", id: row.original.salonId }
+                  : undefined
+                : { kind: "user", id: row.original.id }
+            }
             onBlock={(reason) =>
               handleBlock(
                 row.original.role,
