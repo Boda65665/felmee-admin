@@ -23,6 +23,7 @@ export const ROUTE_SECTION: Partial<Record<RoutePath, AdminPanelSection>> = {
   [ROUTES.mastersModeration]: "MASTERS_AND_SALONS",
   [ROUTES.appointments]: "RECORDS",
   [ROUTES.categories]: "CATEGORIES",
+  [ROUTES.services]: "SERVICES",
   [ROUTES.referral]: "REFERRAL_PROGRAM",
   [ROUTES.loyalty]: "LOYALTY_PROGRAM",
   [ROUTES.chats]: "SUPPORT",
@@ -59,6 +60,10 @@ export function usePermissions() {
   /** Доступен ли маршрут: нет раздела → да; права не загружены → да; иначе ≠ NONE. */
   const canAccessRoute = useMemo(() => {
     return (path: string): boolean => {
+      if (path.toLowerCase().replace(/\/+$/, "") === ROUTES.services) {
+        const level = levelBySection.get("SERVICES");
+        return level === "READ" || level === "FULL";
+      }
       const section = ROUTE_SECTION[path as RoutePath];
       if (!section) return true;
       if (levelBySection.size === 0) return true;

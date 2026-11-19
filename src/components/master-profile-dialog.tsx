@@ -15,6 +15,7 @@ import { clientPlaceLocation } from "@/lib/master-client-place";
 import { AvatarImage } from "./avatar";
 import { AddressAutocompleteField } from "./address-autocomplete-field";
 import { CityAutocompleteField } from "./city-autocomplete-field";
+import { ProfileName } from "./profile-name";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import {
   ModalActions,
@@ -46,6 +47,13 @@ type MasterLocation =
     ? T
     : never;
 
+const russianName = /^[А-ЯЁа-яё]+$/u;
+
+function hasValidLocationGeo(geo: MasterLocation["geolocation"]) {
+  return geo != null && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)
+    && Math.abs(geo.lat) <= 90 && Math.abs(geo.lon) <= 180;
+}
+
 /** Схема редактируемых скалярных полей мастера (числа — строками, парсим при сабмите). */
 const schema = z.object({
   firstName: z.string().trim().min(1, "Укажите имя").max(100),
@@ -56,6 +64,7 @@ const schema = z.object({
   minBookingLeadTime: z.string().trim(),
   breakAfterService: z.string().trim(),
 });
+const salonMasterSchema = schema.extend({ city: z.string() });
 type FormValues = z.infer<typeof schema>;
 
 /** Разобрать целое в диапазоне; вернёт null при пустом/невалидном. */
@@ -79,6 +88,8 @@ export function MasterProfileDialog({
   onOpenChange,
   profile,
   onSave,
+  salonMaster = false,
+  onOpenSalon,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -86,10 +97,14 @@ export function MasterProfileDialog({
   profile?: AdminMasterProfile;
   /** Сохранение диффа. Без него редактирование недоступно (нет кнопки). */
   onSave?: (body: AdminMasterUpdateRequest) => Promise<void>;
+  salonMaster?: boolean;
+  onOpenSalon?: (salonId: number) => void;
 }) {
   // Правка доступна, когда передан `onSave` (страница мастеров/салонов). Без
   // него (напр. профиль со страницы «Записи») — только просмотр.
   const editing = Boolean(onSave);
+  const isSalonMaster = salonMaster || profile?.role === "SALON_MASTER";
+  const canEditLocations = editing && !isSalonMaster;
   const [error, setError] = useState<string | Error | null>(null);
 
   const {
@@ -98,8 +113,9 @@ export function MasterProfileDialog({
     reset,
     watch,
     setValue,
+    setError: setFieldError,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<FormValues>({ resolver: zodResolver(isSalonMaster ? salonMasterSchema : schema) });
 
   // Вне RHF: категории и места оказания услуг.
   const [categoryIds, setCategoryIds] = useState<number[]>([]);
@@ -162,7 +178,7 @@ export function MasterProfileDialog({
     );
 
   const has = (value: ServiceLocation) => places.includes(value);
-  const radiusRequired = has("CLIENT_PLACE") && clientRadius == null;
+  const radiusRequired = canEditLocations && has("CLIENT_PLACE") && clientRadius == null;
   const originalClient = profile?.service_locations?.find((l) => l.service_location === "CLIENT_PLACE");
   const clientAddressNeedsGeo = has("CLIENT_PLACE") && (
     (!originalClient && !clientAddress.trim()) ||
@@ -177,12 +193,29 @@ export function MasterProfileDialog({
     }
 
     const body: AdminMasterUpdateRequest = {};
-    if (values.firstName !== (profile.first_name ?? ""))
+    if (values.firstName !== (profile.first_name ?? "").trim()) {
+      if (!russianName.test(values.firstName)) {
+        setFieldError("firstName", { message: "Используйте только русские буквы" });
+        return;
+      }
       body.first_name = values.firstName;
-    if (values.lastName !== (profile.last_name ?? ""))
+    }
+    if (values.lastName !== (profile.last_name ?? "").trim()) {
+      if (!russianName.test(values.lastName)) {
+        setFieldError("lastName", { message: "Используйте только русские буквы" });
+        return;
+      }
       body.last_name = values.lastName;
-    if (values.city !== (profile.city ?? "")) body.city = values.city;
-    if (values.description && values.description !== (profile.description ?? ""))
+    }
+    const savedCity = (profile.city ?? "").trim();
+    if (canEditLocations && values.city !== savedCity) {
+      if (!values.city) {
+        setFieldError("city", { message: "Укажите город" });
+        return;
+      }
+      body.city = values.city;
+    }
+    if (values.description && values.description !== (profile.description ?? "").trim())
       body.description = values.description;
 
     // Числовые поля — валидируем диапазон, шлём только изменившиеся валидные.
@@ -246,15 +279,15 @@ export function MasterProfileDialog({
     }) =>
       JSON.stringify({
         s: l.service_location,
-        n: l.service_location === "IN_SALON" ? l.salon_name ?? null : null,
-        a: l.address ?? null,
+        n: l.service_location === "IN_SALON" ? l.salon_name?.trim() || null : null,
+        a: l.address?.trim() || null,
         g: l.geolocation ? { lat: l.geolocation.lat, lon: l.geolocation.lon } : null,
         r: l.service_location === "CLIENT_PLACE" ? l.radius_km ?? null : null,
       });
     const currentLocsNorm = origLocs.map(normLoc).sort().join("|");
     const nextLocsNorm = nextLocs.map(normLoc).sort().join("|");
 
-    if (currentLocsNorm !== nextLocsNorm) {
+    if (canEditLocations && currentLocsNorm !== nextLocsNorm) {
       // Валидируем обязательные поля только при изменении — чтобы правка
       // прочих полей не блокировалась неполнотой уже существующих мест.
       if (nextLocs.length === 0) {
@@ -269,11 +302,23 @@ export function MasterProfileDialog({
           setError(`Укажите адрес для места «${label}»`);
           return;
         }
+        if ((loc.address?.length ?? 0) > 1000) {
+          setError(`Адрес для места «${label}» должен содержать не более 1000 символов`);
+          return;
+        }
         if (loc.service_location === "IN_SALON" && !loc.salon_name) {
           setError("Укажите название салона для места «В салоне»");
           return;
         }
-        if (!loc.geolocation && (loc.service_location !== "CLIENT_PLACE" || !originalClient || loc.address !== originalClient.address)) {
+        if ((loc.salon_name?.length ?? 0) > 255) {
+          setError("Название салона должно содержать не более 255 символов");
+          return;
+        }
+        const unchangedClientCenter = loc.service_location === "CLIENT_PLACE" && originalClient
+          && (loc.address ?? "").trim() === (originalClient.address ?? "").trim()
+          && loc.geolocation?.lat === originalClient.geolocation?.lat
+          && loc.geolocation?.lon === originalClient.geolocation?.lon;
+        if (!unchangedClientCenter && !hasValidLocationGeo(loc.geolocation)) {
           setError(`Выберите адрес из подсказок для места «${label}»`);
           return;
         }
@@ -310,19 +355,31 @@ export function MasterProfileDialog({
   const viewAtClient = viewLocations.find(
     (l) => l.service_location === "CLIENT_PLACE",
   );
-  const addressNeedsGeo =
+  const addressNeedsGeo = canEditLocations && (
     (has("AT_MASTER_PLACE") && !atMasterGeo && atMasterAddress.trim() !== (viewAtMaster?.address ?? "").trim()) ||
     (has("IN_SALON") && !inSalonGeo && inSalonAddress.trim() !== (viewInSalon?.address ?? "").trim()) ||
-    clientAddressNeedsGeo;
+    clientAddressNeedsGeo
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <ModalShell className="max-w-[800px]">
-        <ModalHeader title="Профиль мастера" />
+        <ModalHeader title={isSalonMaster ? "Профиль мастера салона" : "Профиль мастера"} />
         <ModalDivider />
 
         {/* Основная информация */}
         <SectionCard title="Основная информация">
+          {isSalonMaster && profile && (
+            <div className="flex flex-col items-start gap-1.5">
+              <span className="text-sm text-ink-muted">Салон</span>
+              <ProfileName
+                target={profile.salon_id != null ? { id: profile.salon_id, role: "SALON" } : null}
+                onOpen={onOpenSalon ? ({ id }) => onOpenSalon(id) : undefined}
+              >
+                {profile.salon_name || (profile.salon_id != null ? `#${profile.salon_id}` : "—")}
+              </ProfileName>
+            </div>
+          )}
           <div className="flex min-w-0 flex-col gap-4 sm:flex-row">
             <AvatarImage
               id={profile?.avatar}
@@ -346,12 +403,16 @@ export function MasterProfileDialog({
                     {...register("lastName")}
                     error={errors.lastName?.message}
                   />
-                  <CityAutocompleteField
-                    label="Город"
-                    value={watch("city") ?? ""}
-                    onChange={(text) => setValue("city", text, { shouldValidate: true, shouldDirty: true })}
-                    error={errors.city?.message}
-                  />
+                  {canEditLocations ? (
+                    <CityAutocompleteField
+                      label="Город"
+                      value={watch("city") ?? ""}
+                      onChange={(text) => setValue("city", text, { shouldValidate: true, shouldDirty: true })}
+                      error={errors.city?.message}
+                    />
+                  ) : (
+                    <Field label="Город салона" value={profile?.city ?? ""} readOnly />
+                  )}
                   <Field
                     label="Опыт работы, лет"
                     inputMode="numeric"
@@ -434,6 +495,9 @@ export function MasterProfileDialog({
 
         {/* Место оказания услуг */}
         <SectionCard title="Место оказания услуг">
+          {isSalonMaster && (
+            <p className="text-sm text-ink-muted">Город и места оказания услуг берутся из профиля салона.</p>
+          )}
           <div className="flex flex-col gap-4">
             <span className="text-sm leading-[1.3] text-ink-muted">
               Варианты места оказания услуг
@@ -442,12 +506,12 @@ export function MasterProfileDialog({
               {PLACE_OPTIONS.map((option) => (
                 <label
                   key={option.value}
-                  className={cnLabel(editing)}
+                  className={cnLabel(canEditLocations)}
                 >
                   <Checkbox
-                    checked={editing ? has(option.value) : viewHas(option.value)}
-                    disabled={!editing}
-                    onCheckedChange={() => editing && togglePlace(option.value)}
+                    checked={canEditLocations ? has(option.value) : viewHas(option.value)}
+                    disabled={!canEditLocations}
+                    onCheckedChange={() => canEditLocations && togglePlace(option.value)}
                   />
                   {option.label}
                 </label>
@@ -455,13 +519,13 @@ export function MasterProfileDialog({
             </div>
           </div>
 
-          {(editing ? has("AT_MASTER_PLACE") : viewHas("AT_MASTER_PLACE")) && (
+          {(canEditLocations ? has("AT_MASTER_PLACE") : viewHas("AT_MASTER_PLACE")) && (
             <div className="flex flex-col gap-1.5 rounded-xl border border-grey-3 bg-white p-4">
               <span className="flex items-center gap-1.5 text-sm leading-[1.3] text-ink-muted">
                 <User className="size-4 shrink-0" />У мастера — адрес для выезда
                 клиента на дом к мастеру
               </span>
-              {editing ? (
+              {canEditLocations ? (
                 <AddressAutocompleteField
                   label="Адрес (у мастера)"
                   value={atMasterAddress}
@@ -479,14 +543,14 @@ export function MasterProfileDialog({
             </div>
           )}
 
-          {(editing ? has("IN_SALON") : viewHas("IN_SALON")) && (
+          {(canEditLocations ? has("IN_SALON") : viewHas("IN_SALON")) && (
             <div className="flex flex-col gap-1.5 rounded-xl border border-grey-3 bg-white p-4">
               <span className="flex items-center gap-1.5 text-sm leading-[1.3] text-ink-muted">
                 <Home className="size-4 shrink-0" />В салоне — салон, где принимает
                 мастер
               </span>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {editing ? (
+                {canEditLocations ? (
                   <>
                     <Field
                       label="Название салона"
@@ -519,12 +583,12 @@ export function MasterProfileDialog({
             </div>
           )}
 
-          {(editing ? has("CLIENT_PLACE") : viewHas("CLIENT_PLACE")) && (
+          {(canEditLocations ? has("CLIENT_PLACE") : viewHas("CLIENT_PLACE")) && (
             <div className="flex flex-col gap-3 rounded-xl border border-grey-3 bg-white p-4">
               <span className="flex items-center gap-1.5 text-sm leading-[1.3] text-ink-muted">
                 <Info className="size-4 shrink-0" />У клиента — базовый адрес, от которого считается радиус выезда
               </span>
-              {editing ? (
+              {canEditLocations ? (
                 <>
                   <AddressAutocompleteField
                     label="Базовый адрес выезда"

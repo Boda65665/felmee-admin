@@ -7,6 +7,7 @@ export { default as MastersPage } from "./masters-page";
 export { default as MastersModerationPage } from "./masters-moderation-page";
 export { default as AppointmentsPage } from "./appointments-page";
 export { default as CategoriesPage } from "./categories-page";
+export { default as ServicesPage } from "./services-page";
 export { default as DocumentsPage } from "./documents-page";
 export { default as RolesPage } from "./roles-page";
 export { default as HistoryPage } from "./history-page";

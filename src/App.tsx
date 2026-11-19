@@ -18,6 +18,7 @@ import {
   DashboardPage,
   ConversionPage,
   CategoriesPage,
+  ServicesPage,
   DocumentsPage,
   AverageCheckPage,
   AppointmentsPage,
@@ -54,6 +55,7 @@ function App() {
           <Route path={ROUTES.dashboard} element={<DashboardPage />} />
           <Route path={ROUTES.conversion} element={<ConversionPage />} />
           <Route path={ROUTES.categories} element={<CategoriesPage />} />
+          <Route path={ROUTES.services} element={<ServicesPage />} />
           <Route path={ROUTES.documents} element={<DocumentsPage />} />
           <Route path={ROUTES.complaints} element={<ComplaintsPage />} />
           <Route path={ROUTES.referral} element={<ReferralProgramPage />} />

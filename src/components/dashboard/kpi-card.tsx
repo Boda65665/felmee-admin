@@ -8,7 +8,7 @@ export type KpiStat = {
   up: boolean;
   title: string;
   value: string;
-  delta: string;
+  delta: string | null;
 };
 
 /** Карточка KPI: заголовок, ссылка-стрелка (если задан onOpen), значение и бейдж. */
@@ -45,10 +45,10 @@ export const KpiCard = ({
         </p>
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <DeltaBadge up={up}>{delta}</DeltaBadge>
+          {delta !== null && <DeltaBadge up={up}>{delta}</DeltaBadge>}
 
           <span className="text-sm font-medium leading-[1.3] tracking-tight text-ink-muted">
-            К прошлому периоду
+            {delta === null ? "Нет базы для сравнения" : "К прошлому периоду"}
           </span>
         </div>
       </div>

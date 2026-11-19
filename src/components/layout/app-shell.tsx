@@ -18,6 +18,7 @@ import {
   Calendar,
   KeyRound,
   LayoutDashboard,
+  Scissors,
   MessageSquare,
 } from "lucide-react";
 
@@ -68,6 +69,7 @@ const NAV: NavSection[] = [
       { icon: Store, label: "Мастера и салоны", to: ROUTES.masters },
       { icon: Calendar, label: "Записи", to: ROUTES.appointments },
       { icon: Lock, label: "Категории", to: ROUTES.categories },
+      { icon: Scissors, label: "Услуги", to: ROUTES.services },
       { icon: FileText, label: "Документы", to: ROUTES.documents },
     ],
   },

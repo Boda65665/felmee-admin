@@ -9,7 +9,7 @@ import {
   AccountCell,
   Card,
   CheckboxFilterMenu,
-  CityFilterMenu,
+  CityFilterHeader,
   ClearFiltersButton,
   DataTable,
   MasterProfileDialog,
@@ -26,7 +26,6 @@ import {
 } from "@/components";
 import { useToast } from "@/components/ui";
 import {
-  useCitySuggestions,
 
   useApproveModerationRequest,
   useRejectModerationRequest,
@@ -157,19 +156,12 @@ const MastersModerationPage = () => {
   );
 
   // Поиск городов для фильтра — серверный автокомплит с дебаунсом.
-  const [cityQuery, setCityQuery] = useState("");
-  const [debouncedCityQuery, setDebouncedCityQuery] = useState("");
-  const { data: cityOptions } = useCitySuggestions(debouncedCityQuery);
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => clearTimeout(id);
   }, [query]);
 
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedCityQuery(cityQuery), 250);
-    return () => clearTimeout(id);
-  }, [cityQuery]);
 
 
   const { data, isLoading, isError, isFetching, refetch, hasNextPage, fetchNextPage } = useInfiniteModerationRequests(
@@ -190,7 +182,6 @@ const MastersModerationPage = () => {
   const clearFilters = () => {
     setRoles([]);
     setCities([]);
-    setCityQuery("");
     setQuery("");
     setSort(null);
     setActiveTab(TABS[0]);
@@ -228,13 +219,13 @@ const MastersModerationPage = () => {
   };
 
   // Набор колонок зависит от вкладки; ячейки замыкаются на действия/диалоги.
-  const filterValues = useRef({ roles, cities, cityOptions });
-  filterValues.current = { roles, cities, cityOptions };
+  const filterValues = useRef({ roles, cities });
+  filterValues.current = { roles, cities };
   const roleHeader = useCallback(() => (
     <CheckboxFilterMenu label="роль" options={ROLE_OPTIONS} selected={filterValues.current.roles} onApply={setRoles} allOption />
   ), [setRoles]);
   const cityHeader = useCallback(() => (
-    <CityFilterMenu label="город" cities={filterValues.current.cityOptions ?? []} selected={filterValues.current.cities} onApply={setCities} onSearchChange={setCityQuery} />
+    <CityFilterHeader selected={filterValues.current.cities} onApply={setCities} />
   ), [setCities]);
   const columns = useMemo<ColumnDef<Row>[]>(() => {
     const base: ColumnDef<Row>[] = [

@@ -46,6 +46,7 @@ export type AdminSalonUpdateRequest =
 
 /** Роль аккаунта в API. */
 export type MasterSalonRole = AdminMasterSalonListItem["role"];
+type MasterProfileRole = Exclude<MasterSalonRole, "SALON">;
 
 /** Статус аккаунта в API. */
 export type MasterSalonStatus = AdminMasterSalonListItem["status"];
@@ -298,12 +299,12 @@ export const useUnblockProvider = () => {
 export const useUpdateMaster = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, body }: { id: number; body: AdminMasterUpdateRequest }) =>
+    mutationFn: ({ id, body }: { id: number; role?: MasterProfileRole; body: AdminMasterUpdateRequest }) =>
       updateMaster(id, body),
-    onSuccess: (updated, { id }) => {
+    onSuccess: (updated, { id, role = "MASTER" }) => {
       queryClient.invalidateQueries({ queryKey: mastersSalonsKeys.all });
       queryClient.setQueryData(
-        mastersSalonsKeys.profile("MASTER", id),
+        mastersSalonsKeys.profile(role, id),
         updated,
       );
     },

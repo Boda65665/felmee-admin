@@ -7,8 +7,9 @@ import {
   type ReactNode,
 } from "react";
 
+import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useCitySuggestions } from "@/lib/api";
+import { citySuggestionContext, useCitySuggestions, type CitySuggestion } from "@/lib/api/suggestions";
 import { cn } from "@/lib/utils";
 
 export type SortDir = "asc" | "desc";
@@ -143,6 +144,40 @@ export function SortMenu({
   );
 }
 
+/** Одиночный фильтр колонки с пунктом сброса. */
+export function SingleFilterMenu<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { value: T; label: string }[];
+  value: T | "";
+  onChange: (value: T | "") => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  function pick(next: T | "") {
+    setOpen(false);
+    onChange(next);
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <ColumnTrigger label={label} icon={SlidersHorizontal} active={value !== ""} count={value ? 1 : undefined} />
+      <PopoverContent className="flex max-h-[min(24rem,var(--radix-popover-content-available-height))] w-72 flex-col gap-0.5">
+        {[{ value: "" as const, label: "Все" }, ...options].map((option) => (
+          <OptionRow key={option.value} active={value === option.value} onClick={() => pick(option.value)}>
+            <Radio checked={value === option.value} />
+            {option.label}
+          </OptionRow>
+        ))}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** Фильтр-мультивыбор колонки (чекбоксы, применяется сразу по клику). */
 export function CheckboxFilterMenu<T extends string>({
   label,
@@ -206,44 +241,38 @@ export function CheckboxFilterMenu<T extends string>({
 }
 
 /** Фильтр по городу: поиск + прокручиваемый список чекбоксов + футер. */
-export function CityFilterMenu({
-  label,
-  cities,
+export function CityFilterHeader({
+  label = "город",
   selected,
   onApply,
-  onSearchChange,
 }: {
-  label: string;
-  cities: string[];
+  label?: string;
   selected: string[];
   onApply: (values: string[]) => void;
-  /**
-   * Если задан — поиск делегируется наружу (серверный автокомплит):
-   * компонент не фильтрует `cities` локально, а сообщает строку поиска, а
-   * `cities` приходят уже отобранными. Без пропа — локальная фильтрация.
-   */
-  onSearchChange?: (query: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [debounced, setDebounced] = useState("");
   // Снимок выбранных на момент открытия — для стабильного порядка (закреплены
   // сверху), чтобы список не «прыгал» при мгновенном выборе.
   const [pinned, setPinned] = useState<string[]>(selected);
 
-  const asyncMode = onSearchChange != null;
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(query.trim()), 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  const searchReady = query.trim() !== "" && query.trim() === debounced;
+  const suggestions = useCitySuggestions(debounced, open && searchReady);
+  const { data } = suggestions;
 
   function handleOpenChange(next: boolean) {
     if (next) {
       setPinned(selected);
       setQuery("");
-      onSearchChange?.("");
+      setDebounced("");
     }
     setOpen(next);
-  }
-
-  function handleQueryChange(next: string) {
-    setQuery(next);
-    onSearchChange?.(next);
   }
 
   // Итоговый список: закреплённые (выбранные при открытии) сверху, затем
@@ -251,15 +280,19 @@ export function CityFilterMenu({
   const displayCities = useMemo(() => {
     const sortRu = (arr: string[]) =>
       [...arr].sort((a, b) => a.localeCompare(b, "ru"));
-    const base = asyncMode
-      ? cities
-      : cities.filter((c) =>
-          c.toLowerCase().includes(query.trim().toLowerCase()),
-        );
+    const matches = new Map<string, CitySuggestion>();
+    if (searchReady) {
+      for (const city of data ?? []) {
+        if (!matches.has(city.name)) matches.set(city.name, city);
+      }
+    }
     const top = sortRu(pinned);
-    const rest = sortRu(base.filter((c) => !pinned.includes(c)));
-    return [...top, ...rest];
-  }, [asyncMode, cities, query, pinned]);
+    const rest = sortRu([...matches.keys()].filter((name) => !pinned.includes(name)));
+    return [...top, ...rest].map((name) => ({
+      name,
+      context: citySuggestionContext(matches.get(name) ?? {}),
+    }));
+  }, [data, searchReady, pinned]);
 
   // Мгновенное применение: клик по городу сразу меняет фильтр (без «Применить»).
   function toggle(city: string) {
@@ -296,7 +329,7 @@ export function CityFilterMenu({
           <input
             type="search"
             value={query}
-            onChange={(event) => handleQueryChange(event.target.value)}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Поиск города"
             className="w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink/40"
           />
@@ -304,9 +337,11 @@ export function CityFilterMenu({
 
         <div className="flex max-h-[240px] flex-col overflow-y-auto">
           {displayCities.length === 0 ? (
-            <p className="py-3.5 text-sm text-ink-muted">Ничего не найдено</p>
+            !suggestions.isFetching && !suggestions.isError && (
+              <p className="py-3.5 text-sm text-ink-muted">Ничего не найдено</p>
+            )
           ) : (
-            displayCities.map((city, i) => (
+            displayCities.map(({ name: city, context }, i) => (
               <div key={city}>
                 <button
                   type="button"
@@ -317,54 +352,28 @@ export function CityFilterMenu({
                     checked={selected.includes(city)}
                     className="size-5 rounded-[6px]"
                   />
-                  <span className={cn(selected.includes(city) && "font-medium")}>{city}</span>
+                  <span className="min-w-0 break-words">
+                    <span className={cn(selected.includes(city) && "font-medium")}>{city}</span>
+                    {context && <span className="mt-0.5 block text-xs text-ink-muted">{context}</span>}
+                  </span>
                 </button>
                 {i < displayCities.length - 1 && <div className="h-px w-full bg-grey-4" />}
               </div>
             ))
           )}
+          {searchReady && (
+            <InfiniteScrollSentinel
+              hasNextPage={suggestions.hasNextPage}
+              isFetching={suggestions.isFetching}
+              isError={suggestions.isError}
+              onLoadMore={() => suggestions.isError && !suggestions.isFetchNextPageError
+                ? suggestions.refetch()
+                : suggestions.fetchNextPage()}
+            />
+          )}
         </div>
       </PopoverContent>
     </Popover>
-  );
-}
-
-/**
- * Самодостаточный заголовок-фильтр города для колонок таблиц. Держит строку
- * поиска, дебаунс и серверный автокомплит (`useCitySuggestions`) ВНУТРИ себя,
- * чтобы ввод не менял стейт страницы и не пересоздавал `columns` — иначе
- * `flexRender` размонтирует заголовок и стирает ввод/закрывает меню. Наружу
- * страница даёт только применённые города (`selected`) и `onApply`.
- */
-export function CityFilterHeader({
-  selected,
-  onApply,
-  label = "город",
-}: {
-  selected: string[];
-  onApply: (values: string[]) => void;
-  label?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [debounced, setDebounced] = useState("");
-
-  useEffect(() => {
-    const id = setTimeout(() => setDebounced(query.trim()), 250);
-    return () => clearTimeout(id);
-  }, [query]);
-
-  const { data } = useCitySuggestions(debounced);
-
-  const cities = query.trim() === "" ? selected : (data ?? []);
-
-  return (
-    <CityFilterMenu
-      label={label}
-      cities={cities}
-      selected={selected}
-      onApply={onApply}
-      onSearchChange={setQuery}
-    />
   );
 }
 

@@ -31,6 +31,23 @@ test('place search preserves FIAS and locality type using authenticated search e
   assert.deepEqual(await suggestions.getPlaceSuggestions('City'), places);
 });
 
+test('both locality endpoints forward the offset and limit of the requested page', async () => {
+  const calls = [];
+  handler = async request => {
+    const url = new URL(request.url);
+    calls.push([url.pathname, Object.fromEntries(url.searchParams)]);
+    const data = url.pathname === '/api/search/places' ? [] : { items: [] };
+    return Response.json({ success: true, data });
+  };
+  await suggestions.getPlaceSuggestions('City', 10, 0);
+  await suggestions.getPlaceSuggestions('City', 10, 10);
+  await suggestions.getCitySuggestions('City', 10, 0);
+  await suggestions.getCitySuggestions('City', 10, 10);
+  assert.deepEqual(calls, ['/api/search/places', '/api/suggestions/cities'].flatMap(path =>
+    ['0', '10'].map(offset => [path, { query: 'City', limit: '10', offset }]),
+  ));
+});
+
 test('address search scopes identical street queries by both FIAS and city/settlement type and preserves numeric geo', async () => {
   for (const type of ['city', 'settlement']) {
     const place = { name: 'Place', fias_id: type + '-fias', type };

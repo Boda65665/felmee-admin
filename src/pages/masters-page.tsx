@@ -36,8 +36,8 @@ import { useToast } from "@/components/ui";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { hasChangedRange } from "@/lib/filter-reset";
 import {
-
   useBlockProvider,
+  useMyPermissions,
   useUnblockProvider,
   useProviderProfile,
   useMasterSalonStats,
@@ -58,6 +58,7 @@ const PAGE_SIZE = 10;
 
 type SortField = "rating" | "reviews_count" | "income_amount";
 type Sort = { field: SortField; dir: SortDir };
+type RoleFilter = AccountRole | "salon-master";
 
 type Row = {
   id: number;
@@ -67,6 +68,7 @@ type Row = {
    */
   providerId: number;
   salonId: number | null;
+  salonName: string | null;
   /** Роль в API — нужна для эндпоинтов блокировки. */
   apiRole: MasterSalonRole;
   role: AccountRole;
@@ -86,10 +88,12 @@ type Row = {
 const ROLE_TO_UI: Record<MasterSalonRole, AccountRole> = {
   MASTER: "master",
   SALON: "salon",
+  SALON_MASTER: "master",
 };
-const ROLE_TO_API: Record<AccountRole, MasterSalonRole> = {
+const ROLE_TO_API: Record<RoleFilter, MasterSalonRole> = {
   master: "MASTER",
   salon: "SALON",
+  "salon-master": "SALON_MASTER",
 };
 
 /** Статус: API ↔ UI. */
@@ -104,9 +108,10 @@ const STATUS_TO_API: Record<AccountStatus, MasterSalonStatus> = {
   blocked: "BLOCKED",
 };
 
-const ROLE_OPTIONS: { value: AccountRole; label: string }[] = [
+const ROLE_OPTIONS: { value: RoleFilter; label: string }[] = [
   { value: "master", label: "Мастер" },
   { value: "salon", label: "Салон" },
+  { value: "salon-master", label: "Мастер салона" },
 ];
 
 const STATUS_OPTIONS: { value: AccountStatus; label: string }[] = [
@@ -150,9 +155,9 @@ const defaultRange = (): DateRange => {
 /** Аккаунт из API → строка таблицы. */
 const toRow = (item: AdminMasterSalonListItem): Row => ({
   id: item.id,
-  // Салон адресуется по salonId; у мастера salonId нет — берём id.
-  providerId: item.role === "SALON" ? item.salonId ?? item.id : item.id,
-  salonId: item.salonId ?? null,
+  providerId: item.role === "SALON" ? item.salon_id ?? item.salonId ?? item.id : item.id,
+  salonId: item.salon_id ?? item.salonId ?? null,
+  salonName: item.salon_name ?? item.salonName ?? null,
   apiRole: item.role,
   role: ROLE_TO_UI[item.role],
   name: item.name || item.phone || "Без имени",
@@ -172,6 +177,12 @@ const toRow = (item: AdminMasterSalonListItem): Row => ({
 /** Сетка колонок таблицы — общая для шапки и строк. */
 const GRID =
   "grid grid-cols-[2fr_0.9fr_1fr_0.8fr_0.8fr_1fr_1.3fr_1.4fr] items-center gap-4";
+const GRID_WITHOUT_ACTIONS =
+  "grid grid-cols-[2fr_0.9fr_1fr_0.8fr_0.8fr_1fr_1.3fr] items-center gap-4";
+
+function canActOnRow(row: Row, canManageSalonMasters: boolean) {
+  return row.apiRole !== "SALON_MASTER" || (canManageSalonMasters && row.status === "blocked");
+}
 
 /* --------------------------------------------------------------------- экран */
 
@@ -182,7 +193,7 @@ const MastersPage = () => {
     "masters.range",
     defaultRange,
   );
-  const [roles, setRoles] = usePersistentState<AccountRole[]>(
+  const [roles, setRoles] = usePersistentState<RoleFilter[]>(
     "masters.roles",
     [],
   );
@@ -207,12 +218,17 @@ const MastersPage = () => {
     to: to ?? "",
   });
 
+  const { data: permissions } = useMyPermissions();
+  const canManageSalonMasters = permissions?.some(
+    ({ section, access_level }) => section === "MASTERS_AND_SALONS" && access_level === "FULL",
+  ) ?? false;
+
   const { data, isLoading, isError, isFetching, refetch, hasNextPage, fetchNextPage } = useInfiniteMastersSalons({
     from: from ?? "",
     to: to ?? "",
     query: debouncedQuery || undefined,
     city: cities.length ? cities : undefined,
-    role: roles.length ? roles.map((r) => ROLE_TO_API[r]) : undefined,
+    role: roles.length ? roles.map((r) => ROLE_TO_API[r]) : Object.values(ROLE_TO_API),
     status: statuses.length ? statuses.map((s) => STATUS_TO_API[s]) : undefined,
     sort: sort ? [`${sort.field}:${sort.dir}`] : undefined,
 
@@ -220,6 +236,7 @@ const MastersPage = () => {
   });
 
   const rows = useMemo(() => (data?.items ?? []).map(toRow), [data]);
+  const showActions = rows.some((row) => canActOnRow(row, canManageSalonMasters));
 
   const { mutateAsync: blockProviderFn } = useBlockProvider();
   const { mutateAsync: unblockProviderFn } = useUnblockProvider();
@@ -297,10 +314,11 @@ const MastersPage = () => {
   // Сохранение профиля: по провайдеру. Ошибку пробрасываем, чтобы модалка
   // показала её инлайном и осталась в режиме правки.
   const saveMaster = async (body: AdminMasterUpdateRequest) => {
-    if (!profileTarget) return;
+    if (!profileTarget || profileTarget.role === "SALON") return;
+    const { id, role } = profileTarget;
     try {
-      await updateMaster.mutateAsync({ id: profileTarget.id, body });
-      toast.success("Профиль мастера обновлён");
+      await updateMaster.mutateAsync({ id, role, body });
+      toast.success(role === "SALON_MASTER" ? "Профиль мастера салона обновлён" : "Профиль мастера обновлён");
     } catch (err) {
       toast.error(
         "Не удалось сохранить",
@@ -386,7 +404,9 @@ const MastersPage = () => {
         cell: ({ row }) => (
           <AccountCell
             name={row.original.name}
-            subtitle={row.original.phone}
+            subtitle={row.original.apiRole === "SALON_MASTER" && row.original.salonName
+              ? `${row.original.phone} · ${row.original.salonName}`
+              : row.original.phone}
             avatarId={row.original.avatar}
             onNameClick={() =>
               setProfileTarget({
@@ -400,9 +420,9 @@ const MastersPage = () => {
       },
       {
         accessorKey: "role",
-        meta: { mobileLabel: "Роль", mobileFilter: true },
+        meta: { mobileLabel: "Роль", mobileFilter: true, wrap: true },
         header: roleHeader,
-        cell: ({ row }) => <RoleBadge role={row.original.role} />,
+        cell: ({ row }) => <RoleBadge role={row.original.apiRole === "SALON_MASTER" ? "salon-master" : row.original.role} />,
       },
       {
         accessorKey: "city",
@@ -459,18 +479,18 @@ const MastersPage = () => {
           headerClassName: "text-right",
           cellClassName: "flex justify-end",
         },
-        cell: ({ row }) => (
+        cell: ({ row }) => !canActOnRow(row.original, canManageSalonMasters) ? null : (
           <RowActions
             blocked={row.original.status === "blocked"}
             showView={false}
             showEdit={false}
             blockVariant={row.original.role}
             supportChatTarget={
-              row.original.apiRole === "SALON"
-                ? row.original.salonId != null
+              row.original.apiRole === "MASTER"
+                ? { kind: "user", id: row.original.id }
+                : row.original.apiRole === "SALON" && row.original.salonId != null
                   ? { kind: "salon", id: row.original.salonId }
                   : undefined
-                : { kind: "user", id: row.original.id }
             }
             onBlock={(reason) =>
               handleBlock(
@@ -492,7 +512,7 @@ const MastersPage = () => {
         ),
       },
     ],
-    [cityHeader, roleHeader, statusHeader, sort],
+    [canManageSalonMasters, cityHeader, roleHeader, statusHeader, sort],
   );
 
 
@@ -535,11 +555,13 @@ const MastersPage = () => {
         onSave={saveSalon}
       />
       <MasterProfileDialog
-        key={`master-${profileTarget?.id}`}
+        key={`${profileTarget?.role}-${profileTarget?.id}`}
         open={profileTarget?.variant === "master" && profileQuery.isSuccess}
         onOpenChange={(open) => !open && closeProfile()}
         profile={profileQuery.data as AdminMasterProfile | undefined}
-        onSave={saveMaster}
+        salonMaster={profileTarget?.role === "SALON_MASTER"}
+        onOpenSalon={(id) => setProfileTarget({ id, role: "SALON", variant: "salon" })}
+        onSave={profileTarget?.role === "SALON_MASTER" && !canManageSalonMasters ? undefined : saveMaster}
       />
 
       <DateFilter value={range} onChange={setRange} />
@@ -612,7 +634,11 @@ const MastersPage = () => {
                   isFetching ? "opacity-60 transition-opacity" : undefined
                 }
               >
-                <DataTable data={rows} columns={columns} gridClassName={GRID} />
+                <DataTable
+                  data={rows}
+                  columns={showActions ? columns : columns.filter(({ id }) => id !== "actions")}
+                  gridClassName={showActions ? GRID : GRID_WITHOUT_ACTIONS}
+                />
               </div>
 
               <InfiniteScrollSentinel

@@ -1,17 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
 
+import { InfiniteScrollSentinel } from "@/components/infinite-scroll-sentinel";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
 } from "@/components/ui/popover";
 import { useCitySuggestions } from "@/lib/api";
-import { usePlaceSuggestions, type PlaceSuggestion } from "@/lib/api/suggestions";
+import { citySuggestionContext, useInfinitePlaceSuggestions, type CitySuggestion, type PlaceSuggestion } from "@/lib/api/suggestions";
 import { cn } from "@/lib/utils";
 
 /**
  * Поле «Город»: с onSelect использует `/api/search/places` и сохраняет FIAS/type,
- * без него — строковые `/api/suggestions/cities`. Комбобокс на
+ * без него — `/api/suggestions/cities` и сохраняет название. Комбобокс на
  * Radix Popover: ввод (с дебаунсом) → список городов; выбрать можно мышью или
  * с клавиатуры (↑/↓ + Enter, Escape — закрыть). Город — просто строка (без
  * координат), поэтому свободный ввод тоже допустим.
@@ -52,26 +53,19 @@ export function CityAutocompleteField({
     return () => clearTimeout(id);
   }, [query]);
 
-  const cities = useCitySuggestions(debounced, !onSelect);
-  const places = usePlaceSuggestions(debounced, Boolean(onSelect));
-  const { isFetching, isPlaceholderData } = onSelect ? places : cities;
+  const searchReady = open && query.trim() === debounced;
+  const cities = useCitySuggestions(debounced, searchReady && !onSelect);
+  const places = useInfinitePlaceSuggestions(debounced, searchReady && Boolean(onSelect));
+  const suggestions = onSelect ? places : cities;
+  const { isFetching, isFetchingNextPage } = suggestions;
 
-  // Не предлагаем вариант, который уже точно введён.
-  const list: PlaceSuggestion[] = onSelect ? places.data ?? [] : (cities.data ?? [])
-    .filter((name) => name.toLowerCase() !== value.trim().toLowerCase())
-    .map((name) => ({ name, fias_id: name, type: "city" }));
-  const showList = open && query.trim() === debounced && !isPlaceholderData && list.length > 0;
+  const list: Array<CitySuggestion | PlaceSuggestion> = (onSelect ? places.data : cities.data) ?? [];
+  const showList = searchReady && list.length > 0;
 
   // Новый набор подсказок — сбрасываем подсветку.
   useEffect(() => {
     setActiveIndex(-1);
   }, [debounced]);
-
-  // Держим подсвеченный пункт в зоне видимости при навигации с клавиатуры.
-  useEffect(() => {
-    if (activeIndex < 0) return;
-    listRef.current?.children[activeIndex]?.scrollIntoView({ block: "nearest" });
-  }, [activeIndex]);
 
   const handleInput = (text: string) => {
     onChange(text);
@@ -79,21 +73,24 @@ export function CityAutocompleteField({
     setOpen(true);
   };
 
-  const handlePick = (place: PlaceSuggestion) => {
-    if (onSelect) onSelect(place);
+  const handlePick = (place: CitySuggestion | PlaceSuggestion) => {
+    if (onSelect && "fias_id" in place) onSelect(place);
     else onChange(place.name);
     setQuery("");
     setOpen(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "ArrowDown") {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (!showList) setOpen(true);
-      setActiveIndex((i) => Math.min(i + 1, list.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
+      const down = e.key === "ArrowDown";
+      if (down && showList && activeIndex === list.length - 1 && suggestions.hasNextPage && !isFetching) {
+        void suggestions.fetchNextPage();
+      }
+      const next = Math.min(Math.max(activeIndex + (down ? 1 : -1), 0), list.length - 1);
+      setActiveIndex(next);
+      listRef.current?.children[next]?.scrollIntoView({ block: "nearest" });
     } else if (e.key === "Enter") {
       if (showList) e.preventDefault();
       if (showList && activeIndex >= 0) {
@@ -136,34 +133,49 @@ export function CityAutocompleteField({
           onOpenAutoFocus={(e) => e.preventDefault()}
           onCloseAutoFocus={(e) => e.preventDefault()}
           onInteractOutside={(e) => { if (e.target === inputRef.current) e.preventDefault(); }}
+          // Выпадающий список в портале: не отдаём жест блокировке скролла модалки.
+          onWheel={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
           style={{ width: "var(--radix-popover-trigger-width)" }}
-          className="max-h-55 overflow-y-auto p-1"
+          className="max-h-[min(13.75rem,var(--radix-popover-content-available-height))] p-1"
         >
           <ul ref={listRef} id={listId} role="listbox">
-            {list.map((place, i) => (
-              <li key={`${place.fias_id}-${i}`}>
-                <button
-                  id={`${listId}-${i}`}
-                  role="option"
-                  aria-selected={i === activeIndex}
-                  type="button"
-                  onMouseEnter={() => setActiveIndex(i)}
-                  // preventDefault — чтобы инпут не терял фокус при клике.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handlePick(place)}
-                  className={cn(
-                    "flex w-full items-start rounded-lg px-3 py-2.5 text-left text-sm leading-[1.3] text-ink transition-colors",
-                    i === activeIndex && "bg-grey-5",
-                  )}
-                >
-                  <span>{place.name}{onSelect && (place.region || place.district) && <span className="block text-xs text-ink-muted">{[place.region, place.district].filter(Boolean).join(", ")}</span>}</span>
-                </button>
-              </li>
-            ))}
+            {list.map((place, i) => {
+              const context = citySuggestionContext(place);
+              return (
+                <li key={`${"fias_id" in place ? place.fias_id : place.name}-${i}`}>
+                  <button
+                    id={`${listId}-${i}`}
+                    role="option"
+                    aria-selected={i === activeIndex}
+                    type="button"
+                    onMouseEnter={() => setActiveIndex(i)}
+                    // preventDefault — чтобы инпут не терял фокус при клике.
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handlePick(place)}
+                    className={cn(
+                      "flex w-full items-start rounded-lg px-3 py-2.5 text-left text-sm leading-[1.3] text-ink transition-colors",
+                      i === activeIndex && "bg-grey-5",
+                    )}
+                  >
+                    <span className="min-w-0 break-words">
+                      {place.name}
+                      {context && <span className="mt-0.5 block text-xs text-ink-muted">{context}</span>}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+          <InfiniteScrollSentinel
+            hasNextPage={suggestions.hasNextPage}
+            isFetching={isFetching}
+            isError={suggestions.isFetchNextPageError}
+            onLoadMore={() => suggestions.fetchNextPage()}
+          />
         </PopoverContent>
       </Popover>
-      {open && query.trim() && isFetching && <span role="status" className="text-xs text-ink-muted">Поиск городов…</span>}
+      {open && query.trim() && isFetching && !isFetchingNextPage && <span role="status" className="text-xs text-ink-muted">Поиск городов…</span>}
       {error && <span className="text-xs leading-[1.3] text-danger">{error}</span>}
     </div>
   );

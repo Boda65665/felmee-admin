@@ -6254,7 +6254,7 @@ export interface paths {
                     to: string;
                     query?: string;
                     city?: string[];
-                    role?: ("MASTER" | "SALON")[];
+                    role?: ("MASTER" | "SALON" | "SALON_MASTER")[];
                     status?: ("ACTIVE" | "INACTIVE" | "BLOCKED")[];
                     offset?: number;
                     limit?: number;
@@ -27186,7 +27186,7 @@ export interface components {
             total_count: number;
         };
         /** @enum {string} */
-        AdminPanelSection: "BUSINESS_OVERVIEW" | "CLIENTS" | "MASTERS_AND_SALONS" | "RECORDS" | "CATEGORIES" | "REFERRAL_PROGRAM" | "LOYALTY_PROGRAM" | "BONUSES_AND_BALANCES" | "REFUNDS" | "SUPPORT" | "COMPLAINTS" | "NOTIFICATIONS" | "ACTION_HISTORY" | "ROLES" | "DOCUMENTS" | "REFERRAL_SYSTEM";
+        AdminPanelSection: "BUSINESS_OVERVIEW" | "CLIENTS" | "MASTERS_AND_SALONS" | "RECORDS" | "CATEGORIES" | "SERVICES" | "REFERRAL_PROGRAM" | "LOYALTY_PROGRAM" | "BONUSES_AND_BALANCES" | "REFUNDS" | "SUPPORT" | "COMPLAINTS" | "NOTIFICATIONS" | "ACTION_HISTORY" | "ROLES" | "DOCUMENTS" | "REFERRAL_SYSTEM";
         /**
          * @description `NONE` — раздел недоступен, `READ` — доступен просмотр,
          *     `FULL` — доступны просмотр и изменение данных.
@@ -33308,6 +33308,10 @@ export interface components {
         AdminMasterProfile: {
             /** Format: int64 */
             user_id: number;
+            role?: "MASTER" | "SALON_MASTER";
+            /** Format: int64 */
+            salon_id?: number | null;
+            salon_name?: string | null;
             /** Format: int64 */
             readonly avatar: number | null;
             first_name: string | null;
@@ -33473,11 +33477,14 @@ export interface components {
             /** Format: int64 */
             avatar: number | null;
             /** @enum {string} */
-            role: "MASTER" | "SALON";
+            role: "MASTER" | "SALON" | "SALON_MASTER";
             city: string | null;
             /** Format: int64 */
             salonId: number | null;
             salonName: string | null;
+            /** Format: int64 */
+            salon_id?: number | null;
+            salon_name?: string | null;
             /** Format: double */
             rating: number | null;
             /** Format: int64 */

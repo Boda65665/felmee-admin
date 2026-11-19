@@ -8,6 +8,7 @@ export const ROUTES = {
   mastersModeration: "/masters/moderation",
   appointments: "/appointments",
   categories: "/categories",
+  services: "/services",
   documents: "/documents",
   roles: "/roles",
   history: "/history",

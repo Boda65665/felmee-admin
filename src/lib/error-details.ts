@@ -3,6 +3,14 @@ import { businessBankErrorMessage } from "./business-bank-status";
 
 export type AdminErrorDetails = { message: string; code: string | null; status: number | null };
 
+const masterValidationMessages: Record<string, string> = {
+  "Salon masters inherit city and service locations from their salon": "Город и места оказания услуг мастера берутся из профиля салона. Измените их в карточке салона.",
+  "Service locations are invalid": "Проверьте адреса и координаты мест оказания услуг. Для выезда к клиенту проверьте радиус.",
+  "First name must not be blank, must not be longer than 100 characters and must contain only Russian letters": "Укажите имя русскими буквами, не более 100 символов.",
+  "Last name must not be blank, must not be longer than 100 characters and must contain only Russian letters": "Укажите фамилию русскими буквами, не более 100 символов.",
+  "City must not be blank and must not be longer than 30 characters": "Укажите город, не более 30 символов.",
+};
+
 /** Preserve API codes without depending on a particular transport or Error subclass. */
 export function adminErrorDetails(error: unknown): AdminErrorDetails {
   const value = typeof error === "object" && error !== null ? error as Record<string, unknown> : null;
@@ -18,7 +26,10 @@ export function adminErrorDetails(error: unknown): AdminErrorDetails {
     internal_error: "На сервере произошла ошибка. Повторите попытку позже.",
     too_many_request: "Слишком много запросов. Подождите немного и повторите действие.",
   };
-  let message = raw ? documentReviewErrorMessage(raw) : code ? businessBankErrorMessage(code)! : generic;
+  const masterMessage = code === "invalid_body" && Object.hasOwn(masterValidationMessages, raw)
+    ? masterValidationMessages[raw]
+    : undefined;
+  let message = masterMessage ?? (raw ? documentReviewErrorMessage(raw) : code ? businessBankErrorMessage(code)! : generic);
   if (message === generic && code && Object.hasOwn(codeMessages, code)) message = codeMessages[code];
   if (code && raw === code) message = businessBankErrorMessage(code)!;
   return { message, code, status };

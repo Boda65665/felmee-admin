@@ -1,6 +1,25 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
 
 import { api, unwrap } from "./client";
+import type { components } from "./schema";
+
+export type CitySuggestion = Pick<components["schemas"]["CitySuggestion"], "name" | "region" | "district">;
+
+export function citySuggestionContext(place: { region?: string | null; district?: string | null }) {
+  return [place.region, place.district].filter(Boolean).join(", ");
+}
+
+export function useAdvantageSuggestions(query: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["suggestions", "advantages", query],
+    queryFn: async ({ signal }) => unwrap(await api.GET("/api/master/advantages/suggestions", {
+      params: { query: { query, limit: 5 } },
+      signal,
+    }))?.items ?? [],
+    enabled,
+    staleTime: 60_000,
+  });
+}
 
 export interface PlaceSuggestion {
   name: string;
@@ -18,10 +37,47 @@ export function findSavedPlace(places: PlaceSuggestion[], name: string): PlaceSu
   return matches.length === 1 ? matches[0] : null;
 }
 
-export async function getPlaceSuggestions(query: string): Promise<PlaceSuggestion[]> {
+const localityPageSize = 10;
+
+function useLocalityPages<T>(
+  key: readonly string[],
+  fetchPage: (offset: number, signal: AbortSignal) => Promise<T[]>,
+  enabled: boolean,
+) {
+  return useInfiniteQuery({
+    queryKey: [...key, "pages"],
+    initialPageParam: 0,
+    queryFn: ({ pageParam, signal }) => fetchPage(pageParam, signal),
+    enabled,
+    getNextPageParam: (page, pages, offset) => {
+      if (page.length < localityPageSize) return undefined;
+      // Старый сервер может игнорировать offset и вернуть ту же страницу.
+      const previous = pages.at(-2);
+      if (previous && JSON.stringify(page) === JSON.stringify(previous)) return undefined;
+      return offset + page.length;
+    },
+    select: ({ pages }) => pages.flatMap((page, index) => {
+      const previous = pages[index - 1];
+      return previous && JSON.stringify(page) === JSON.stringify(previous) ? [] : page;
+    }),
+  });
+}
+
+export async function getPlaceSuggestions(query: string, limit = 5, offset?: number, signal?: AbortSignal): Promise<PlaceSuggestion[]> {
+  // offset поддерживается актуальным API; локальный снимок OpenAPI старее.
+  const params = { query, limit, offset };
   return unwrap(await api.GET("/api/search/places", {
-    params: { query: { query, limit: 5 } },
+    params: { query: params },
+    signal,
   })) ?? [];
+}
+
+export function useInfinitePlaceSuggestions(query: string, enabled: boolean) {
+  return useLocalityPages(
+    ["suggestions", "places", query],
+    (offset, signal) => getPlaceSuggestions(query, localityPageSize, offset, signal),
+    enabled && query.length > 0,
+  );
 }
 
 export function usePlaceSuggestions(query: string, enabled: boolean) {
@@ -63,28 +119,30 @@ export const suggestionsKeys = {
 
 /**
  * Подсказки городов/населённых пунктов по строке поиска.
- * `GET /api/suggestions/cities`. Возвращает уникальные названия.
+ * `GET /api/suggestions/cities`. Сохраняет область и район каждой подсказки.
  */
 export const getCitySuggestions = async (
   query: string,
   limit = 20,
-): Promise<string[]> => {
+  offset?: number,
+  signal?: AbortSignal,
+): Promise<CitySuggestion[]> => {
+  const params = { query, limit, offset };
   const res = await api.GET("/api/suggestions/cities", {
-    params: { query: { query, limit } },
+    params: { query: params },
+    signal,
   });
-  const items = unwrap(res)?.items ?? [];
-  return [...new Set(items.map((c) => c.name))];
+  return unwrap(res)?.items ?? [];
 };
 
 /** Подсказки городов. Запрос идёт только для непустой строки поиска. */
 export const useCitySuggestions = (query: string, enabled = true) => {
   const trimmed = query.trim();
-  return useQuery({
-    queryKey: suggestionsKeys.cities(trimmed),
-    queryFn: () => getCitySuggestions(trimmed),
-    enabled: enabled && trimmed.length > 0,
-    placeholderData: keepPreviousData,
-  });
+  return useLocalityPages(
+    suggestionsKeys.cities(trimmed),
+    (offset, signal) => getCitySuggestions(trimmed, localityPageSize, offset, signal),
+    enabled && trimmed.length > 0,
+  );
 };
 
 /**

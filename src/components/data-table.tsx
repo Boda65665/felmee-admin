@@ -15,7 +15,7 @@ import {
 } from "@tanstack/react-table";
 
 import { cn } from "@/lib/utils";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 // Классы для выравнивания ячеек шапки/тела задаются через meta колонки.
 // Сигнатура дженериков обязана совпадать с оригинальной ColumnMeta (не используются).
@@ -43,11 +43,14 @@ interface DataTableProps<T> {
   onColumnFiltersChange?: OnChangeFn<ColumnFiltersState>;
   sorting?: SortingState;
   onSortingChange?: OnChangeFn<SortingState>;
+  manualSorting?: boolean;
+  manualFiltering?: boolean;
   /** Включает пагинацию с заданным размером страницы. */
   pageSize?: number;
   /** Доп. классы строки тела (переопределяют дефолтные отступы/размер текста). */
   rowClassName?: string;
   headerRowClassName?: string;
+  emptyState?: ReactNode;
 }
 
 /**
@@ -67,9 +70,12 @@ export function DataTable<T>({
   onColumnFiltersChange,
   sorting,
   onSortingChange,
+  manualSorting,
+  manualFiltering,
   pageSize,
   rowClassName,
   headerRowClassName,
+  emptyState,
 }: DataTableProps<T>) {
   const table = useReactTable({
     data,
@@ -78,6 +84,8 @@ export function DataTable<T>({
     globalFilterFn,
     onColumnFiltersChange,
     onSortingChange,
+    manualSorting,
+    manualFiltering,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
@@ -131,7 +139,7 @@ export function DataTable<T>({
 
       {/* Строки */}
       {rows.length === 0 ? (
-        <p className="py-8 text-center text-base text-ink-muted">
+        emptyState ?? <p className="py-8 text-center text-base text-ink-muted">
           Ничего не найдено
         </p>
       ) : (

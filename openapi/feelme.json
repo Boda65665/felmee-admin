@@ -10392,12 +10392,13 @@
             "explode": true,
             "schema": {
               "type": "array",
-              "maxItems": 2,
+              "maxItems": 3,
               "items": {
                 "type": "string",
                 "enum": [
                   "MASTER",
-                  "SALON"
+                  "SALON",
+                  "SALON_MASTER"
                 ]
               }
             }
@@ -47637,6 +47638,7 @@
           "MASTERS_AND_SALONS",
           "RECORDS",
           "CATEGORIES",
+          "SERVICES",
           "REFERRAL_PROGRAM",
           "LOYALTY_PROGRAM",
           "BONUSES_AND_BALANCES",
@@ -63679,6 +63681,22 @@
             ],
             "nullable": true,
             "description": "Администратор, заблокировавший мастера; `null`, если мастер активен."
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "MASTER",
+              "SALON_MASTER"
+            ]
+          },
+          "salon_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "salon_name": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -64237,7 +64255,8 @@
             "type": "string",
             "enum": [
               "MASTER",
-              "SALON"
+              "SALON",
+              "SALON_MASTER"
             ]
           },
           "city": {
@@ -64287,6 +64306,15 @@
             "nullable": true
           },
           "blockReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "salon_id": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "salon_name": {
             "type": "string",
             "nullable": true
           }

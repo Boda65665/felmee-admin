@@ -29,7 +29,7 @@ export type ChartSeries = {
   dashed?: boolean;
 };
 
-export type ChartRow = { day: number } & Record<string, number>;
+export type ChartRow = { day: number } & Record<string, number | null>;
 
 /** Значение серии по умолчанию — млн ₽ (дашборд). */
 const defaultTooltipValue = (v: number) => `₽ ${formatMillions(v)} М`;
@@ -63,7 +63,8 @@ const ChartTooltip = ({
       </span>
       <span className="text-sm leading-[1.3] tracking-tight">
         {series.map((s) => {
-          const value = payload.find((p) => p.dataKey === s.key)?.value ?? 0;
+          const value = payload.find((p) => p.dataKey === s.key)?.value;
+          if (value == null) return null;
           return (
             <span key={s.key} className="block">
               {s.short ? `${s.short}: ` : ""}
@@ -103,7 +104,7 @@ export const MetricChartCard = ({
   data: ChartRow[];
   series: ChartSeries[];
   yDomain: [number, number];
-  yTicks: number[];
+  yTicks?: number[];
   xDomain?: [number, number];
   xTicks?: number[];
   /** Подпись оси Y (по умолчанию млн ₽). */
@@ -238,7 +239,7 @@ export const MetricChartCard = ({
                 stroke={s.color}
                 strokeWidth={2}
                 strokeDasharray={s.dashed ? "6 6" : undefined}
-                dot={false}
+                dot={data.filter((row) => row[s.key] != null).length === 1}
                 activeDot={{ r: 4 }}
               />
             ))}
