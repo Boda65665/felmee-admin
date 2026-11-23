@@ -187,6 +187,14 @@ test('active beneficiary transfers keep refreshing but manual review and waiting
   assert.equal(bankStates.shouldPollBusinessApplication?.({ status: 'NEW_APPLICATION', bank_status: 'NOT_SENT', balance_transfer_status: 'PENDING' }, false), false);
 });
 
+test('completing document review starts polling during automatic bank submission', () => {
+  const approved = { status: 'DOCUMENTS_VERIFIED', bank_status: 'NOT_SENT' };
+  assert.equal(bankStates.shouldPollBusinessApplication(approved), false);
+  assert.equal(bankStates.shouldPollBusinessApplication(approved, bankStates.isAutomaticBankVerificationQueued(approved)), true);
+  assert.equal(bankStates.isAutomaticBankVerificationQueued({ ...approved, status: 'NEEDS_CLARIFICATION' }), false);
+  assert.equal(bankStates.isAutomaticBankVerificationQueued({ ...approved, bank_status: 'TECHNICAL_ERROR' }), false);
+});
+
 test('reserved funds and transfer review errors explain the required action without offering a repeat transfer', () => {
   assert.match(registry.documentReviewErrorMessage('Wait until reserved beneficiary funds are settled'), /зарезервирован/i);
   assert.match(registry.documentReviewErrorMessage('Wait until beneficiary balance migration finishes'), /перенос/i);

@@ -360,7 +360,7 @@ export const useBusinessApplication = (key: BusinessApplicationKey | null, bankV
   const bankStatus = query.data?.bank_status;
   const transferStatus = query.data?.balance_transfer_status;
   useEffect(() => {
-    if (!bankStatus || bankStatus === "NOT_SENT" || bankStatus === "UNDER_REVIEW") return;
+    if (!bankStatus || bankStatus === "NOT_SENT") return;
     if (bankStatus === "VERIFIED" && transferStatus && transferStatus !== "DONE" && transferStatus !== "REVIEW_REQUIRED") return;
     void queryClient.invalidateQueries({
       queryKey: businessRegistryKeys.all,

@@ -39,7 +39,7 @@ import {
 import { cn } from "@/lib/utils";
 import { usePersistentState } from "@/lib/use-persistent-state";
 import { Avatar } from "@/components/avatar";
-import { BUSINESS_BANK_META } from "@/lib/business-bank-status";
+import { BUSINESS_BANK_META, isAutomaticBankVerificationQueued } from "@/lib/business-bank-status";
 
 /* ------------------------------------------------------------------ данные
 
@@ -192,26 +192,37 @@ const DocumentsPage = () => {
   const rows = useMemo(() => data?.items ?? [], [data]);
 
   // Карточка открытой заявки + комментарии + мутации по ней.
+  const completeReview = useCompleteDocumentsReview();
+  const completedCard = completeReview.data;
+  const automaticBankVerificationQueued = completedCard !== undefined &&
+    isAutomaticBankVerificationQueued(completedCard) &&
+    completedCard.source === selected?.key.source &&
+    completedCard.business_type === selected?.key.businessType &&
+    completedCard.business_entity_id === selected?.key.businessEntityId;
   const bankVerification = useRequestBusinessBankVerification();
-  const bankVerificationQueued = bankVerification.data?.action === "QUEUED" &&
+  const manualBankVerificationQueued = bankVerification.data?.action === "QUEUED" &&
     bankVerification.variables?.source === selected?.key.source &&
     bankVerification.variables?.businessType === selected?.key.businessType &&
     bankVerification.variables?.businessEntityId === selected?.key.businessEntityId;
+  const bankVerificationQueued = automaticBankVerificationQueued || manualBankVerificationQueued;
   const cardQuery = useBusinessApplication(selected?.key ?? null, bankVerificationQueued);
   const bankStatus = cardQuery.data?.bank_status;
   const resetBankVerification = bankVerification.reset;
+  const resetCompleteReview = completeReview.reset;
   useEffect(() => {
-    if (bankVerificationQueued && bankStatus && bankStatus !== "NOT_SENT" && bankStatus !== "UNDER_REVIEW") {
+    if (automaticBankVerificationQueued && cardQuery.data && !isAutomaticBankVerificationQueued(cardQuery.data)) {
+      resetCompleteReview();
+    }
+    if (manualBankVerificationQueued && bankStatus && bankStatus !== "NOT_SENT" && bankStatus !== "UNDER_REVIEW") {
       resetBankVerification();
     }
-  }, [bankVerificationQueued, bankStatus, resetBankVerification]);
+  }, [automaticBankVerificationQueued, manualBankVerificationQueued, cardQuery.data, bankStatus, resetCompleteReview, resetBankVerification]);
   const commentsQuery = useInfiniteBusinessComments(selected?.key ?? null);
   const addAttachments = useAddDocumentAttachments();
   const putDocument = usePutApplicationDocument();
   const updatePartner = useUpdateBusinessPartner();
   const updateRequisites = useUpdateBusinessRequisites();
   const setDecision = useSetDocumentDecision();
-  const completeReview = useCompleteDocumentsReview();
 
   const openReview = (row: BusinessApplicationListItem) => {
     setSelected({

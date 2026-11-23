@@ -23,6 +23,10 @@ export function isBeneficiaryMigrationLocked(status: BalanceTransferStatus | und
   return Boolean(status && status !== "PENDING" && status !== "DONE");
 }
 
+export function isAutomaticBankVerificationQueued(card: Pick<BusinessApplicationCard, "status" | "bank_status"> | undefined): boolean {
+  return card?.status === "DOCUMENTS_VERIFIED" && card.bank_status === "NOT_SENT";
+}
+
 export function shouldPollBusinessApplication(card: ApplicationBankState | undefined, queued = false): boolean {
   if (!card || card.balance_transfer_status === "REVIEW_REQUIRED") return false;
   if (card.bank_status === "UNDER_REVIEW" || queued && card.bank_status === "NOT_SENT") return true;
@@ -51,7 +55,7 @@ export function businessBankErrorMessage(code: string | null | undefined): strin
 
 export const BUSINESS_BANK_META: Record<BusinessApplicationCard["bank_status"], { label: string; className: string }> = {
   NOT_SENT: { label: "Не отправлено", className: "text-brand" },
-  UNDER_REVIEW: { label: "На проверке банком", className: "text-status-blue" },
+  UNDER_REVIEW: { label: "На проверке", className: "text-status-blue" },
   VERIFIED: { label: "Проверен банком", className: "text-success" },
   NOT_VERIFIED: { label: "Не подтверждены банком", className: "text-warning" },
   TECHNICAL_ERROR: { label: "Ошибка проверки банком", className: "text-danger" },

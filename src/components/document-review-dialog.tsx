@@ -477,8 +477,9 @@ export function DocumentReviewDialog({
   const [bankPending, setBankPending] = useState(false);
   const [bankAlreadyCurrent, setBankAlreadyCurrent] = useState(false);
   const bankQueued = bankVerificationQueued && card?.bank_status === "NOT_SENT";
+  const bankUnderReview = bankQueued || card?.bank_status === "UNDER_REVIEW";
   const migrationLocked = isBeneficiaryMigrationLocked(card?.balance_transfer_status);
-  const bankProcessing = bankQueued || card?.bank_status === "UNDER_REVIEW" || migrationLocked;
+  const bankProcessing = bankUnderReview || migrationLocked;
   const confirmed = isBusinessApplicationConfirmed(card);
   const transferMeta = card?.balance_transfer_status ? BALANCE_TRANSFER_META[card.balance_transfer_status] : null;
   const bankStatusMeta = card?.bank_status === "VERIFIED" && !confirmed
@@ -702,7 +703,7 @@ export function DocumentReviewDialog({
   };
 
   const verifyBank = async () => {
-    if (!card || card.status !== "DOCUMENTS_VERIFIED" || hasUploads || bankPending || bankProcessing || partnerForm.formState.isSubmitting) return;
+    if (!card || card.status !== "DOCUMENTS_VERIFIED" || completing || hasUploads || bankPending || bankProcessing || partnerForm.formState.isSubmitting) return;
     setBankPending(true);
     setFormError(null);
     setBankAlreadyCurrent(false);
@@ -814,9 +815,11 @@ export function DocumentReviewDialog({
                       {bankStatusMeta.label}
                     </button>
                   ) : <span>{bankStatusMeta.label}</span>}
-                  <button type="button" aria-label="Отправить на проверку банка" title={card.status !== "DOCUMENTS_VERIFIED" ? "Сначала завершите проверку документов" : migrationLocked ? "Дождитесь завершения переноса остатка или ручной сверки" : "Отправить на проверку банка"} onClick={verifyBank} disabled={card.status !== "DOCUMENTS_VERIFIED" || hasUploads || partnerForm.formState.isSubmitting || bankPending || bankProcessing} className="flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-grey-5 disabled:opacity-40">
-                    <img src={documentBankRefresh} alt="" className={bankPending || bankQueued ? "animate-spin" : undefined} />
-                  </button>
+                  {!bankUnderReview && (
+                    <button type="button" aria-label="Отправить на проверку банка" title={card.status !== "DOCUMENTS_VERIFIED" ? "Сначала завершите проверку документов" : migrationLocked ? "Дождитесь завершения переноса остатка или ручной сверки" : "Отправить на проверку банка"} onClick={verifyBank} disabled={card.status !== "DOCUMENTS_VERIFIED" || completing || hasUploads || partnerForm.formState.isSubmitting || bankPending || bankProcessing} className="flex size-7 shrink-0 items-center justify-center rounded-lg hover:bg-grey-5 disabled:opacity-40">
+                      <img src={documentBankRefresh} alt="" className={bankPending ? "animate-spin" : undefined} />
+                    </button>
+                  )}
                 </div>}
               </div>
             </div>
